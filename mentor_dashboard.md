@@ -1,852 +1,1158 @@
-# Mentor APIs — Technical Reference
+# Mentor Dashboard — API Testing Guide
 
-This document describes every HTTP API under the dashboard **mentor** module in **mulearnbackend**. Paths are relative to the API root:
-
-**Base URL:** `https://<host>/api/v1/dashboard/mentor/`
+> Test in this exact order — each step depends on data created in the previous one.
+> All endpoints are prefixed with: `POST /api/v1/dashboard/mentor/`
+> Auth: `Authorization: Bearer <jwt_token>`
 
 ---
 
-## Conventions
+## Prerequisites
 
-### Authentication
+Run the alter script before any testing:
+```bash
+python alter-scripts/alter-1.61.py
+```
 
-All endpoints require a valid JWT unless noted otherwise.
+You need two JWT tokens:
+- **`ADMIN_TOKEN`** — a user with the Admin role
+- **`MENTOR_TOKEN`** — a regular user who will apply as mentor
 
-- **Header:** `Authorization: Bearer <access_token>`
+---
 
-The project uses `CustomizePermission` (JWT validation via `JWTUtils`).
+## Step 1 — Mentor Applies (Onboarding)
 
-### Response envelope (`CustomResponse`)
+**Usage:** A user applies to become a mentor, optionally declaring preferred IGs.
 
-Successful responses generally look like:
+**Endpoint:** `POST /api/v1/dashboard/mentor/onboarding/`  
+**Auth:** Any logged-in user (`MENTOR_TOKEN`)
 
+**Request:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
-  "message": {
-    "general": ["Human-readable summary message"]
-  },
-  "response": { }
+  "about": "I am a full-stack developer with 5 years of experience in React and Django.",
+  "expertise": "React, Django, REST APIs, System Design",
+  "reason": "I want to give back to the community and help junior developers grow.",
+  "preferred_ig_ids": [
+    "ig-uuid-web-dev",
+    "ig-uuid-backend"
+  ]
 }
 ```
 
-Failures use `hasError: true`, a `statusCode` field (often 400), and `message` may include field-level validation under keys such as `general` or nested objects. Some views omit a populated `response` on failure.
-
-### Mentor persona (critical)
-
-Most mentor-scoped endpoints are **not** satisfied by merely having a “Mentor” role in the database. The server reads **`user_settings`** on each request:
-
-- `active_persona` must be **`mentor`**
-- `active_role_link_id` and `active_ig_id` must be set and must match an **active** `UserRoleLink` for that user
-
-You activate this state by calling **Persona Switch** (`POST .../persona/switch/`). Permission class **`IsIGMentor`** enforces this; **`IsVerifiedIGMentor`** additionally requires a `UserMentor` row with **`is_verified === true`** and **`mentor_tier === "VERIFIED"`**.
-
----
-
-## API index
-
-| Area | Method | Endpoint |
-|------|--------|----------|
-| Persona | `GET` | `/persona/ig-roles/` |
-| Persona | `POST` | `/persona/switch/` |
-| Persona | `POST` | `/persona/reset/` |
-| Profile | `GET` | `/profile/` |
-| Profile | `PATCH` | `/profile/` |
-| Overview | `GET` | `/overview/` |
-| Overview | `GET` | `/overview/home-summary/` |
-| Availability | `GET` | `/availability/` |
-| Availability | `POST` | `/availability/` |
-| Availability | `DELETE` | `/availability/<slot_id>/` |
-| Sessions | `GET` | `/sessions/` |
-| Sessions | `POST` | `/sessions/` |
-| Sessions | `PATCH` | `/sessions/<session_id>/` |
-| Mentees | `GET` | `/mentees/` |
-| Tasks (review) | `GET` | `/tasks/queue/` |
-| Tasks (review) | `PATCH` | `/tasks/queue/<log_id>/` |
-| Tasks (requests) | `GET` | `/tasks/requests/` |
-| Tasks (requests) | `POST` | `/tasks/requests/` |
-| Admin | `GET` | `/admin/task-requests/` |
-| Admin | `PATCH` | `/admin/task-requests/<req_id>/` |
-| Admin | `PATCH` | `/admin/tier/<mentor_profile_id>/` |
-
----
-
-## 1. Persona — list IG mentor roles
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/persona/ig-roles/`
-
-**Usage:** Populate a persona switcher with every **active**, **IG-scoped** Mentor `UserRoleLink` for the current user. Includes tier/verification from the shared `UserMentor` profile (one profile per user; tier/verification apply across IGs in the serializer output).
-
-**Role / access:** Any **authenticated** user (`CustomizePermission` only). Does **not** require active mentor persona.
-
-**Request body:** None.
-
-**Query parameters:** None.
-
-**Response body (`response`):**
-
+**Response (201):**
 ```json
 {
-  "ig_roles": [
-    {
-      "role_link_id": "<uuid>",
-      "ig_id": "<uuid>",
-      "ig_name": "string",
-      "role": "Mentor",
-      "is_primary": true,
+  "statusCode": 6000,
+  "message": "Mentor application submitted successfully. Awaiting admin review.",
+  "response": {
+    "mentor": {
+      "id": "mentor-row-uuid",
+      "full_name": "Pranav Kumar",
+      "email": "pranav@mulearn.org",
+      "muid": "pranav-kumar@mulearn",
+      "about": "I am a full-stack developer...",
+      "expertise": "React, Django, REST APIs, System Design",
+      "reason": "I want to give back...",
+      "hours": 0,
+      "mentor_tier": "NORMAL",
       "is_verified": false,
-      "mentor_tier": "NORMAL"
+      "verified_by_name": null,
+      "verified_at": null,
+      "verification_note": null,
+      "created_at": "2024-05-24T06:00:00Z"
     }
-  ]
+  }
 }
 ```
 
-**Constraints:**
-
-- Only role links with `role.title == "Mentor"`, non-null `ig`, and `is_active == true` are returned.
-
-**Example flow:**
-
-1. User logs in and receives JWT.
-2. Client calls `GET .../ig-roles/` to show which IGs they can mentor.
-3. User picks an IG; client calls `POST .../persona/switch/` with that role link id.
-
----
-
-## 2. Persona — switch to mentor
-
-**Endpoint:** `POST /api/v1/dashboard/mentor/persona/switch/`
-
-**Usage:** Set `user_settings.active_persona` to `mentor`, bind `active_role_link` and `active_ig`, and refresh `last_persona_switched_at`. Ensures a `UserMentor` row exists (`get_or_create` with tier `NORMAL` if new).
-
-**Role / access:** **Authenticated** (any valid JWT). The role link itself must be a Mentor role you own.
-
-**Request body (JSON):**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `active_role_link_id` | string (UUID, max 36) | Yes | `UserRoleLink.id` for an IG-scoped Mentor assignment you own |
-
-**Response body (`response`):**
-
+**Error — Already applied:**
 ```json
 {
-  "active_persona": "mentor",
-  "active_role_link_id": "<uuid>",
-  "active_ig_id": "<uuid>",
-  "ig_name": "string",
-  "is_verified": false,
-  "mentor_tier": "NORMAL",
-  "profile_created": false,
-  "last_persona_switched_at": "2026-05-14T12:00:00+00:00",
-  "access": null
+  "statusCode": 6002,
+  "message": "You have already applied to become a mentor."
 }
 ```
 
-**Constraints:**
-
-- `active_role_link_id` must belong to the current user, be **active**, have a non-null IG, and `role.title` must be **`Mentor`**.
-- `ig_id` is **never** taken from the client for security; it is derived from the role link.
-
-**Example flow:**
-
-1. `GET /persona/ig-roles/`
-2. `POST /persona/switch/` with chosen `active_role_link_id`
-3. Subsequent calls to `/profile/`, `/overview/`, etc. succeed with `IsIGMentor`.
-
 ---
 
-## 3. Persona — reset to learner
+## Step 2 — Admin Lists All Mentor Applications
 
-**Endpoint:** `POST /api/v1/dashboard/mentor/persona/reset/`
+**Usage:** Admin reviews the pending mentor application queue.
 
-**Usage:** Clear mentor context: set persona to `learner`, null out `active_role_link` and `active_ig`.
+**Endpoint:** `GET /api/v1/dashboard/mentor/list/`  
+**Auth:** `ADMIN_TOKEN`  
+**Query params:** `?is_verified=false&perPage=10&pageIndex=1`
 
-**Role / access:** **Authenticated**. Requires an existing `UserSettings` row.
-
-**Request body:** None (empty JSON is fine).
-
-**Response body (`response`):**
-
+**Response (200):**
 ```json
 {
-  "active_persona": "learner"
-}
-```
-
-**Constraints:**
-
-- Fails if `UserSettings` does not exist for the user.
-
-**Example flow:** After mentoring work, call reset so `IsIGMentor` endpoints return 403 until the user switches back.
-
----
-
-## 4. Mentor profile — get
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/profile/`
-
-**Usage:** Load the current user’s `UserMentor` profile (about, reason, expertise, hours, tier, verification metadata).
-
-**Role / access:** **Authenticated** + **`IsIGMentor`** (active mentor persona).
-
-**Request body:** None.
-
-**Response body (`response`):**
-
-```json
-{
-  "id": "<uuid>",
-  "about": "string or null",
-  "reason": "string or null",
-  "expertise": "string or null",
-  "volunteer_hours": 0,
-  "mentor_tier": "NORMAL",
-  "is_verified": false,
-  "verified_at": "2026-05-14T12:00:00+00:00",
-  "verification_note": "string or null"
-}
-```
-
-**Constraints:** Profile must exist; otherwise failure response.
-
----
-
-## 5. Mentor profile — patch
-
-**Endpoint:** `PATCH /api/v1/dashboard/mentor/profile/`
-
-**Usage:** Update editable mentor fields only.
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Request body (JSON):** At least one of:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `about` | string | Max length per DB (1000) |
-| `reason` | string | Max 1000 |
-| `expertise` | string | Text field |
-
-Unknown keys are ignored. Empty patch (no allowed keys) fails.
-
-**Response body (`response`):**
-
-```json
-{
-  "id": "<uuid>",
-  "about": "...",
-  "reason": "...",
-  "expertise": "...",
-  "volunteer_hours": 0,
-  "mentor_tier": "NORMAL",
-  "is_verified": false
-}
-```
-
-**Constraints:** Cannot update tier or verification here (admin tier API or provisioning flows).
-
----
-
-## 6. Overview — full dashboard snapshot
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/overview/`
-
-**Usage:** Single payload for mentor home: user info, mentor profile snippet, active persona context, all authorized mentor IGs, and stats (mentees, completed sessions, pending task approvals) **scoped to the active IG**.
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Request body:** None.
-
-**Response body (`response`):** (structure from `MentorOverviewView`)
-
-- `user`: `full_name`, `muid`, `profile_pic`
-- `mentor_profile`: `about`, `expertise`, `reason`, `volunteer_hours`, `mentor_tier`, `is_verified`
-- `active_persona`: `active_persona`, `active_role_link_id`, `active_ig_id`, `ig_name`, `is_verified`
-- `authorized_igs`: list of `{ role_link_id, ig_id, ig_name, is_primary, is_verified }` — note `is_verified` comes from the single `UserMentor` when present
-- `stats`: `total_mentees`, `sessions_conducted`, `pending_task_approvals`, `volunteer_hours`
-
-**Constraints:** Stats use `KarmaActivityLog` with `mentor_review_status == 'PENDING'` for the active IG.
-
----
-
-## 7. Overview — home summary
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/overview/home-summary/`
-
-**Usage:** Richer widgets: next session, stat cards, upcoming sessions, mentee progress, expertise tags.
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Query parameters:**
-
-| Param | Description |
-|-------|-------------|
-| `ig_id` | Optional; defaults to active persona IG |
-
-**Request body:** None.
-
-**Response body (`response`):** Includes `next_session`, `stat_cards`, `upcoming_sessions`, `session_requests` (currently always `[]`), `mentee_progress`, `expertise_tags` (expertise split by comma into tags when string).
-
-**Constraints:** Unlike `tasks/queue/`, the optional `ig_id` here is **not** re-checked against `UserRoleLink`; clients should only pass IGs the user legitimately mentors to avoid empty or misleading summaries.
-
----
-
-## 8. Availability — list
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/availability/`
-
-**Usage:** List active weekly slots for the current user where `ig_id` equals the **active persona IG** **or** `ig` is null (“All IGs” global slots).
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Response (`response`):**
-
-```json
-{
-  "active_ig_id": "<uuid>",
-  "slots": [
-    {
-      "id": "<uuid>",
-      "ig_id": "<uuid or null>",
-      "ig_name": "string or All IGs",
-      "weekday": 1,
-      "start_time": "09:00",
-      "end_time": "10:00",
-      "timezone": "Asia/Kolkata",
-      "is_active": true,
-      "valid_from": "2026-01-01",
-      "valid_to": null
+  "statusCode": 6000,
+  "response": {
+    "data": [
+      {
+        "id": "mentor-row-uuid",
+        "full_name": "Pranav Kumar",
+        "email": "pranav@mulearn.org",
+        "muid": "pranav-kumar@mulearn",
+        "about": "I am a full-stack developer...",
+        "hours": 0,
+        "mentor_tier": "NORMAL",
+        "is_verified": false,
+        "verified_by_name": null,
+        "created_at": "2024-05-24T06:00:00Z"
+      }
+    ],
+    "pagination": {
+      "count": 1,
+      "totalPages": 1,
+      "isNext": false,
+      "isPrev": false
     }
-  ]
-}
-```
-
-**Constraints:** `weekday` 1 = Monday … 7 = Sunday.
-
----
-
-## 9. Availability — create slots
-
-**Endpoint:** `POST /api/v1/dashboard/mentor/availability/`
-
-**Usage:** Bulk-create availability slots. **`ig_id` is always the active persona IG** (not client-supplied).
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Request body (JSON):**
-
-```json
-{
-  "slots": [
-    {
-      "weekday": 1,
-      "start_time": "09:00:00",
-      "end_time": "10:00:00",
-      "timezone": "Asia/Kolkata",
-      "valid_from": "2026-01-01",
-      "valid_to": null
-    }
-  ]
-}
-```
-
-| Field | Required | Notes |
-|-------|----------|--------|
-| `slots` | Yes | Non-empty array |
-| `weekday` | Per slot | Integer 1–7 |
-| `start_time`, `end_time` | Per slot | Time values; `start_time` must be strictly before `end_time` |
-| `timezone` | No | Defaults to `Asia/Kolkata` |
-| `valid_from`, `valid_to` | No | Optional date bounds |
-
-**Response (`response`):**
-
-```json
-{
-  "created_ids": ["<uuid>", "..."],
-  "errors": [{ "index": 0, "error": "string" }]
-}
-```
-
-**Constraints:** Invalid rows are skipped and reported in `errors`; valid rows still save.
-
----
-
-## 10. Availability — soft-delete slot
-
-**Endpoint:** `DELETE /api/v1/dashboard/mentor/availability/<slot_id>/`
-
-**Usage:** Sets `is_active = false` on a slot you own, for the active IG or a global (`ig` null) slot.
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Request body:** None.
-
-**Response (`response`):** `{ "slot_id": "<slot_id>" }`
-
-**Constraints:** 404-style failure if slot not found or not owned / not visible for current persona IG.
-
----
-
-## 11. Sessions — list
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/sessions/`
-
-**Usage:** Paginated sessions where the user is a **MENTOR** participant, filtered to the **active persona IG**.
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Query parameters:**
-
-| Param | Description |
-|-------|-------------|
-| `status` | e.g. `SCHEDULED`, `COMPLETED`, `CANCELLED`, `NO_SHOW` |
-| `mode` | `ONLINE`, `OFFLINE`, `HYBRID` |
-| `date_from`, `date_to` | Filter `starts_at` by date (inclusive) |
-| `pageIndex`, `perPage`, `search`, `sortBy` | Pagination / search (`title`) / sort (`starts_at`, `title`; prefix `-` for desc) |
-
-**Response (`response`):**
-
-```json
-{
-  "data": [
-    {
-      "id": "<uuid>",
-      "ig_name": "string",
-      "title": "string",
-      "mode": "ONLINE",
-      "starts_at": "...",
-      "ends_at": "...",
-      "status": "SCHEDULED",
-      "meeting_link": "string or null",
-      "participants": [
-        {
-          "user_id": "<uuid>",
-          "full_name": "string",
-          "participant_role": "MENTOR",
-          "attendance_status": "INVITED"
-        }
-      ]
-    }
-  ],
-  "pagination": {
-    "count": 0,
-    "totalPages": 0,
-    "isNext": false,
-    "isPrev": false,
-    "nextPage": null
   }
 }
 ```
 
 ---
 
-## 12. Sessions — create
+## Step 3a — Admin Approves the Mentor
 
-**Endpoint:** `POST /api/v1/dashboard/mentor/sessions/`
+**Usage:** Admin approves the mentor application. Assigns the **Mentor role**, creates IG links, and notifies the user.
 
-**Usage:** Create a `MentorshipSession` in the **active persona IG** and link mentor + mentee participants (both start as `INVITED`).
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/<mentor-row-uuid>/verify/`  
+**Auth:** `ADMIN_TOKEN`
 
-**Role / access:** **Authenticated** + **`IsIGMentor`**. **Additional:** `UserMentor` must exist and **`is_verified` must be `true`** (note: this check uses **`is_verified` only**, not `IsVerifiedIGMentor`, which also requires tier `VERIFIED` for task queue).
+**Request:**
+```json
+{
+  "action": "approve",
+  "mentor_tier": "VERIFIED",
+  "note": "Reviewed portfolio — excellent candidate."
+}
+```
 
-**Request body (JSON):**
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Mentor application approved. Mentor role assigned.",
+  "response": {
+    "mentor": {
+      "id": "mentor-row-uuid",
+      "full_name": "Pranav Kumar",
+      "is_verified": true,
+      "mentor_tier": "VERIFIED",
+      "verified_by_name": "Admin User",
+      "verified_at": "2024-05-24T06:05:00Z",
+      "verification_note": "Reviewed portfolio — excellent candidate."
+    }
+  }
+}
+```
 
-| Field | Type | Required |
-|-------|------|----------|
-| `mentee_id` | string (user UUID) | Yes |
-| `title` | string, max 150 | Yes |
-| `description` | string | No |
-| `mode` | `ONLINE` \| `OFFLINE` \| `HYBRID` | No (default `ONLINE`) |
-| `starts_at` | ISO datetime | Yes |
-| `ends_at` | ISO datetime | Yes |
-| `meeting_link` | string, max 500 | No |
+**Side effects (all happen automatically):**
+- ✅ `UserRoleLink` created → mentor now has the **Mentor role** in their JWT
+- ✅ `UserIgLink` rows created for `ig-uuid-web-dev` and `ig-uuid-backend` (`assignment_type=MENTOR`)
+- ✅ Notification sent: _"🎉 Congratulations! Your mentor application has been approved."_
+- ✅ `SystemActionLog` row created
 
-**Constraints:**
-
-- `ends_at` must be after `starts_at`.
-- `mentee_id` must exist and must not equal the mentor’s user id.
-- **`ig_id` is not accepted in the body**; always taken from persona context.
-
-**Response:** Success message only (`general_message`); session id is not returned in the shown success path (serializer `save()` does not add it to `response`).
+**Error — Invalid action:**
+```json
+{
+  "statusCode": 6002,
+  "message": "'action' must be 'approve' or 'reject'."
+}
+```
 
 ---
 
-## 13. Sessions — update
+## Step 3b — Admin Rejects the Mentor Application
 
-**Endpoint:** `PATCH /api/v1/dashboard/mentor/sessions/<session_id>/`
+**Usage:** Admin rejects the application. The `user_mentor` row is **deleted** so the user gets a clean slate to reapply with an improved profile.
 
-**Usage:** Update session status and/or participant attendance, notes, contributed minutes.
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/<mentor-row-uuid>/verify/`  
+**Auth:** `ADMIN_TOKEN`
 
-**Role / access:** **Authenticated** + **`IsIGMentor`**. You must be a **MENTOR** participant on that session.
-
-**Request body (JSON):** all optional (partial update):
-
+**Request:**
 ```json
 {
-  "status": "COMPLETED",
-  "participants": [
-    {
-      "user_id": "<uuid>",
-      "participant_role": "MENTEE",
-      "attendance_status": "ATTENDED",
-      "progress_note": "optional max 500",
-      "contributed_minutes": 45
+  "action": "reject",
+  "note": "Profile incomplete. Please add more details about your expertise and share portfolio links."
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Mentor application rejected. User notified and may reapply."
+}
+```
+
+**Side effects:**
+- ❌ `user_mentor` row deleted → user's application is wiped (no `is_verified=false` ambiguity)
+- ❌ No `UserRoleLink` created → user does NOT get the Mentor role
+- ❌ No `UserIgLink` created
+- 📢 Notification sent to user: _"Your mentor application was reviewed and not approved. Reason: Profile incomplete..."_
+
+> **Why delete?** With only `is_verified` as the flag, `is_verified=false` can't distinguish  
+> "pending review" from "rejected". Deleting the row means the user can reapply freely.
+
+**Error — Mentor not found (already rejected/deleted):**
+```json
+{
+  "statusCode": 6002,
+  "message": "Mentor not found."
+}
+```
+
+---
+
+## Step 4 — Admin Creates an IG Session
+
+**Usage:** Admin creates a session tied to a specific Interest Group.
+
+**Endpoint:** `POST /api/v1/dashboard/mentor/sessions/`  
+**Auth:** `ADMIN_TOKEN`
+
+**Request:**
+```json
+{
+  "ig": "ig-uuid-web-dev",
+  "title": "React Hooks Deep Dive",
+  "description": "An advanced session covering useEffect, useMemo, and custom hooks.",
+  "mode": "ONLINE",
+  "starts_at": "2024-06-01T10:00:00Z",
+  "ends_at": "2024-06-01T12:00:00Z",
+  "meeting_link": "https://meet.google.com/abc-defg-hij"
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Session created successfully.",
+  "response": {
+    "session": {
+      "id": "session-uuid-1",
+      "title": "React Hooks Deep Dive",
+      "status": "SCHEDULED",
+      "is_global": false,
+      "ig_id": "ig-uuid-web-dev",
+      "ig_name": "Web Development",
+      "mode": "ONLINE",
+      "starts_at": "2024-06-01T10:00:00Z",
+      "ends_at": "2024-06-01T12:00:00Z",
+      "meeting_link": "https://meet.google.com/abc-defg-hij",
+      "participants": [
+        {
+          "user_id": "admin-user-uuid",
+          "full_name": "Admin User",
+          "participant_role": "MENTOR",
+          "attendance_status": "INVITED"
+        }
+      ]
     }
+  }
+}
+```
+
+---
+
+## Step 5 — Add Mentor as Participant
+
+**Usage:** Add the verified mentor as a MENTOR participant in the session.
+
+**Endpoint:** `POST /api/v1/dashboard/mentor/sessions/<session-uuid-1>/participants/`  
+**Auth:** `ADMIN_TOKEN`
+
+**Request:**
+```json
+{
+  "user": "mentor-user-uuid",
+  "participant_role": "MENTOR"
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Participant added.",
+  "response": {
+    "participant": {
+      "id": "link-uuid",
+      "user_id": "mentor-user-uuid",
+      "full_name": "Pranav Kumar",
+      "participant_role": "MENTOR",
+      "attendance_status": "INVITED"
+    }
+  }
+}
+```
+
+---
+
+## Step 6 — Send Session Reminders (Feature 4)
+
+**Usage:** Manually trigger reminder notifications to all participants before the session.
+
+**Endpoint:** `POST /api/v1/dashboard/mentor/sessions/<session-uuid-1>/remind/`  
+**Auth:** `ADMIN_TOKEN` or `MENTOR_TOKEN`
+
+**Request:** _(no body needed)_
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Reminder sent to 2 participant(s)."
+}
+```
+
+> **Side effect:** `Notification` rows created for each INVITED/ATTENDED participant.
+
+**Error — Session not scheduled:**
+```json
+{
+  "statusCode": 6002,
+  "message": "Reminders can only be sent for SCHEDULED or PENDING_APPROVAL sessions."
+}
+```
+
+---
+
+## Step 7 — Mark Session as Completed
+
+**Usage:** Admin marks the session complete after it happens.
+
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/sessions/<session-uuid-1>/status/`  
+**Auth:** `ADMIN_TOKEN`
+
+**Request:**
+```json
+{
+  "status": "COMPLETED"
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Session status updated to 'COMPLETED'."
+}
+```
+
+---
+
+## Step 8 — Admin Awards Karma to Mentor (Feature 1)
+
+**Usage:** After a completed session, admin awards karma points to the mentor.
+
+**Endpoint:** `POST /api/v1/dashboard/mentor/sessions/<session-uuid-1>/karma-award/`  
+**Auth:** `ADMIN_TOKEN`
+
+**Request:**
+```json
+{
+  "mentor_id": "mentor-user-uuid",
+  "karma": 50,
+  "note": "Excellent session delivery — mentees rated 4.8/5."
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "50 karma awarded to mentor.",
+  "response": {
+    "award": {
+      "id": "award-uuid",
+      "session_id": "session-uuid-1",
+      "session_title": "React Hooks Deep Dive",
+      "mentor_id": "mentor-user-uuid",
+      "mentor_name": "Pranav Kumar",
+      "karma": 50,
+      "note": "Excellent session delivery — mentees rated 4.8/5.",
+      "awarded_by_name": "Admin User",
+      "awarded_at": "2024-06-01T13:00:00Z",
+      "kal_id": null,
+      "created_at": "2024-06-01T13:00:00Z"
+    }
+  }
+}
+```
+
+**Side effects:**
+- `Wallet.karma` for mentor incremented by 50
+- `Notification` sent to mentor: _"You've been awarded 50 karma..."_
+- `SystemActionLog` row created with `action_type=KARMA_AWARD`
+
+**Error — Session not completed:**
+```json
+{
+  "statusCode": 6002,
+  "message": "Karma can only be awarded for COMPLETED sessions."
+}
+```
+
+**Error — Double award attempt:**
+```json
+{
+  "statusCode": 6002,
+  "message": "Karma already awarded to this mentor for this session."
+}
+```
+
+**Error — Not a mentor participant:**
+```json
+{
+  "statusCode": 6002,
+  "message": "User is not a MENTOR participant in this session."
+}
+```
+
+---
+
+## Step 9 — View Karma Awards for a Session
+
+**Endpoint:** `GET /api/v1/dashboard/mentor/sessions/<session-uuid-1>/karma-award/`  
+**Auth:** `ADMIN_TOKEN` or `MENTOR_TOKEN`
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "response": {
+    "awards": [
+      {
+        "id": "award-uuid",
+        "session_id": "session-uuid-1",
+        "session_title": "React Hooks Deep Dive",
+        "mentor_id": "mentor-user-uuid",
+        "mentor_name": "Pranav Kumar",
+        "karma": 50,
+        "note": "Excellent session delivery...",
+        "awarded_by_name": "Admin User",
+        "awarded_at": "2024-06-01T13:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Step 10 — Mentor Submits a Global Session (needs Admin Approval)
+
+**Usage:** Mentor proposes a cross-IG platform-wide session. Goes to `PENDING_APPROVAL`.
+
+**Endpoint:** `POST /api/v1/dashboard/mentor/sessions/`  
+**Auth:** `MENTOR_TOKEN`
+
+**Request:**
+```json
+{
+  "title": "System Design for Scale",
+  "description": "Designing distributed systems — load balancing, caching, and database sharding.",
+  "mode": "ONLINE",
+  "starts_at": "2024-06-15T10:00:00Z",
+  "ends_at": "2024-06-15T13:00:00Z",
+  "meeting_link": "https://zoom.us/j/12345678"
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Global session submitted for admin approval.",
+  "response": {
+    "session": {
+      "id": "session-uuid-2",
+      "title": "System Design for Scale",
+      "status": "PENDING_APPROVAL",
+      "is_global": true,
+      "ig_id": null,
+      "ig_name": null
+    }
+  }
+}
+```
+
+---
+
+## Step 11 — Admin Views Pending Global Sessions (with IG Suggestions — Feature 6)
+
+**Endpoint:** `GET /api/v1/dashboard/mentor/sessions/pending/`  
+**Auth:** `ADMIN_TOKEN`
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "response": {
+    "data": [
+      {
+        "id": "session-uuid-2",
+        "title": "System Design for Scale",
+        "status": "PENDING_APPROVAL",
+        "is_global": true,
+        "created_by_name": "Pranav Kumar",
+        "created_at": "2024-06-10T08:00:00Z",
+        "suggested_igs": [
+          { "ig_id": "ig-uuid-backend", "ig_name": "Backend Development" },
+          { "ig_id": "ig-uuid-cloud",   "ig_name": "Cloud & DevOps" }
+        ]
+      }
+    ],
+    "pagination": { "count": 1, "totalPages": 1, "isNext": false, "isPrev": false }
+  }
+}
+```
+
+---
+
+## Step 12 — Admin Approves Global Session (Optionally Attaches an IG)
+
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/sessions/<session-uuid-2>/approve/`  
+**Auth:** `ADMIN_TOKEN`
+
+**Request — approve and convert to IG-scoped:**
+```json
+{
+  "action": "approve",
+  "ig_id": "ig-uuid-backend",
+  "remarks": "Great topic — attaching to Backend IG."
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Global session approved and scheduled.",
+  "response": {
+    "session": {
+      "id": "session-uuid-2",
+      "title": "System Design for Scale",
+      "status": "SCHEDULED",
+      "is_global": false,
+      "ig_id": "ig-uuid-backend",
+      "ig_name": "Backend Development",
+      "approved_by_name": "Admin User",
+      "approved_at": "2024-06-10T09:00:00Z"
+    }
+  }
+}
+```
+
+**Request — reject:**
+```json
+{
+  "action": "reject",
+  "remarks": "Out of scope for current semester."
+}
+```
+
+---
+
+## Step 13 — Mentor Reviews a Task Submission (Feature 2)
+
+**Usage:** Mentor sees pending task submissions from their IG's learners.
+
+**Step 13a — List the review queue**
+
+**Endpoint:** `GET /api/v1/dashboard/mentor/review-queue/?status=PENDING&ig_id=ig-uuid-web-dev`  
+**Auth:** `MENTOR_TOKEN`
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "response": {
+    "data": [
+      {
+        "id": "kal-uuid-1",
+        "user_name": "Alice Learner",
+        "user_muid": "alice@mulearn",
+        "task_title": "Build a REST API",
+        "task_hashtag": "#rest-api-build",
+        "ig_name": "Web Development",
+        "karma": 100,
+        "mentor_review_status": "PENDING",
+        "mentor_reviewed_at": null,
+        "mentor_review_feedback": null,
+        "created_at": "2024-05-20T10:00:00Z"
+      }
+    ],
+    "pagination": { "count": 1, "totalPages": 1 }
+  }
+}
+```
+
+**Step 13b — Mentor approves the submission**
+
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/review-queue/<kal-uuid-1>/`  
+**Auth:** `MENTOR_TOKEN`
+
+**Request:**
+```json
+{
+  "status": "APPROVED",
+  "feedback": "Good implementation. Clean code and proper error handling."
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Task submission marked as APPROVED.",
+  "response": { "status": "APPROVED" }
+}
+```
+
+**Request — reject:**
+```json
+{
+  "status": "REJECTED",
+  "feedback": "Missing authentication middleware. Please revise and resubmit."
+}
+```
+
+**Error — Already reviewed:**
+```json
+{
+  "statusCode": 6002,
+  "message": "Already reviewed: status is 'APPROVED'."
+}
+```
+
+> **Note:** Mentor approval does NOT credit karma. Admin must still `appraiser_approved=true` via the existing karma flow to actually credit the learner.
+
+---
+
+## Step 14 — Mentor Leaderboard (Feature 3)
+
+**Usage:** See top mentors ranked by sessions, mentees, and hours.
+
+**Endpoint:** `GET /api/v1/dashboard/mentor/leaderboard/`  
+**Auth:** `ADMIN_TOKEN` or `MENTOR_TOKEN`  
+**Query params:** `?ig_id=ig-uuid-web-dev&pageIndex=1&perPage=10` _(ig_id optional)_
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "response": {
+    "data": [
+      {
+        "rank": 1,
+        "mentor_id": "mentor-user-uuid",
+        "full_name": "Pranav Kumar",
+        "muid": "pranav-kumar@mulearn",
+        "profile_pic": "https://example.com/profile.png",
+        "mentor_tier": "VERIFIED",
+        "sessions_completed": 5,
+        "mentees_attended": 23,
+        "hours": 12,
+        "score": 73
+      },
+      {
+        "rank": 2,
+        "mentor_id": "other-mentor-uuid",
+        "full_name": "Arjun Mentor",
+        "muid": "arjun@mulearn",
+        "profile_pic": null,
+        "mentor_tier": "NORMAL",
+        "sessions_completed": 3,
+        "mentees_attended": 10,
+        "hours": 8,
+        "score": 37
+      }
+    ],
+    "pagination": {
+      "count": 2,
+      "totalPages": 1,
+      "isNext": false,
+      "isPrev": false,
+      "nextPage": null
+    }
+  }
+}
+```
+
+> **Score formula:** `(sessions_completed × 3) + (mentees_attended × 2) + (hours × 1)`
+
+---
+
+## Step 15 — Dashboard Overview (single-call snapshot)
+
+**Usage:** Load the mentor dashboard landing page with all counts in one call.
+
+**Endpoint:** `GET /api/v1/dashboard/mentor/overview/`  
+**Auth:** `ADMIN_TOKEN` or `MENTOR_TOKEN`  
+**Query params:** `?ig_id=ig-uuid-web-dev` _(optional)_
+
+**Response for Admin (200):**
+```json
+{
+  "statusCode": 6000,
+  "response": {
+    "overview": {
+      "mentors": {
+        "total": 42,
+        "verified": 30,
+        "unverified": 12,
+        "pending_verification": 12
+      },
+      "sessions": {
+        "counts": {
+          "pending_approval": 3,
+          "scheduled": 8,
+          "completed": 15,
+          "cancelled": 2,
+          "no_show": 1,
+          "total": 29
+        },
+        "upcoming": [
+          {
+            "id": "session-uuid-1",
+            "title": "React Hooks Deep Dive",
+            "starts_at": "2024-06-01T10:00:00Z",
+            "status": "SCHEDULED",
+            "ig_name": "Web Development"
+          }
+        ],
+        "pending_global": [
+          {
+            "id": "session-uuid-3",
+            "title": "Open Source Contribution Guide",
+            "status": "PENDING_APPROVAL",
+            "created_by_name": "Another Mentor"
+          }
+        ]
+      },
+      "task_requests": {
+        "pending": 4,
+        "approved": 11,
+        "rejected": 2,
+        "recent_pending": []
+      },
+      "opportunities": {
+        "total": 18,
+        "published": 10,
+        "draft": 5,
+        "closed": 3,
+        "by_ig": [
+          { "ig_id": "ig-uuid-web-dev", "ig_name": "Web Development", "count": 6 }
+        ]
+      },
+      "mentees": { "total_unique": 67 },
+      "recent_activity": [
+        {
+          "action_type": "KARMA_AWARD",
+          "actor_name": "Admin User",
+          "entity_name": "mentor_karma_award",
+          "new_data": { "karma": 50, "session_id": "session-uuid-1" },
+          "created_at": "2024-06-01T13:00:00Z"
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+---
+
+## Quick Reference — All Endpoints
+
+| # | Method | Endpoint | Auth | Feature |
+|---|---|---|---|---|
+| 1 | `POST` | `/onboarding/` | Any | Apply as mentor |
+| 2 | `GET` | `/onboarding/` | Any | View own mentor profile |
+| 3 | `PATCH` | `/onboarding/` | Any | Update own profile + preferred IGs (verified → triggers IG Lead request) |
+| 4 | `GET` | `/list/` | Admin | All mentor applications |
+| 5 | `PATCH` | `/<pk>/verify/` | Admin | **Approve** mentor (`IG_MENTOR` or `MENTOR`) → assigns role, IG links, notification |
+| 5b | `PATCH` | `/<pk>/verify/` | Admin | **Reject** mentor → deletes row, user can reapply, notified |
+| 6 | `GET` | `/overview/` | Admin/Mentor | Dashboard snapshot |
+| 7 | `GET` | `/leaderboard/` | Admin/Mentor | Mentor leaderboard |
+| 8 | `GET` | `/sessions/pending/` | Admin | Global sessions queue |
+| 9 | `PATCH` | `/sessions/<pk>/approve/` | Admin | Approve/reject global |
+| 10 | `GET` | `/sessions/` | Admin/Mentor | List sessions |
+| 11 | `POST` | `/sessions/` | Admin/Mentor/IG_MENTOR | Create session (IG or global, tier-gated) |
+| 12 | `GET` | `/sessions/<pk>/` | Admin/Mentor | Session detail |
+| 13 | `PATCH` | `/sessions/<pk>/` | Admin/Mentor | Edit session |
+| 14 | `DELETE` | `/sessions/<pk>/` | Admin | Cancel session |
+| 15 | `PATCH` | `/sessions/<pk>/status/` | Admin | Change session status |
+| 16 | `GET` | `/sessions/<pk>/participants/` | Admin/Mentor | List participants |
+| 17 | `POST` | `/sessions/<pk>/participants/` | Admin/Mentor | Add participant |
+| 18 | `DELETE` | `/sessions/<pk>/participants/<upk>/` | Admin/Mentor | Remove participant |
+| 19 | `GET` | `/sessions/<pk>/karma-award/` | Admin/Mentor | List karma awards |
+| 20 | `POST` | `/sessions/<pk>/karma-award/` | Admin | Award karma to mentor |
+| 21 | `POST` | `/sessions/<pk>/remind/` | Admin/Mentor | Send reminders |
+| 22 | `GET` | `/review-queue/` | Admin/Mentor | Task review queue |
+| 23 | `PATCH` | `/review-queue/<pk>/` | Mentor | Review a submission |
+| 24 | `GET` | `/availability/` | Admin/Mentor | Availability slots |
+| 25 | `POST` | `/availability/` | Mentor | Create slot |
+| 26 | `PUT` | `/availability/<pk>/` | Mentor | Update slot |
+| 27 | `DELETE` | `/availability/<pk>/` | Admin/Mentor | Deactivate slot |
+| 28 | `GET` | `/task-requests/` | Admin/Mentor | Task proposals |
+| 29 | `POST` | `/task-requests/` | Mentor | Submit task proposal |
+| 30 | `PATCH` | `/task-requests/<pk>/` | Admin | Approve/reject proposal |
+| 31 | `GET` | `/opportunities/` | Admin/Mentor | IG opportunities |
+| 32 | `POST` | `/opportunities/` | Admin/Mentor | Create opportunity |
+| 33 | `PATCH` | `/opportunities/<pk>/` | Admin/Mentor | Update opportunity |
+| 34 | `DELETE` | `/opportunities/<pk>/` | Admin | Delete opportunity |
+| 35 | `GET` | `/mentees/` | Admin/Mentor | Unique mentees list |
+| 36 | `GET` | `/activity-log/` | Admin/Mentor | Audit log |
+| 37 | `GET` | `/my-igs/` | Admin/Mentor | Mentor's active IG links |
+| 38 | `GET` | `/ig-requests/?ig_id=<id>` | Admin/IG Lead | Pending mentor IG join requests |
+| 39 | `PATCH` | `/ig-requests/<pk>/` | Admin/IG Lead | Approve or reject IG join request |
+| 40 | `PATCH` | `PATCH /api/v1/dashboard/ig/get/<ig_pk>/` | Admin/IG Lead | Update IG fields + auto-create mentor profile/role/link |
+
+---
+
+## Step A — Run DB Migration (Tier Rename)
+
+> [!IMPORTANT]
+> Run this **before** testing any mentor features. It renames the tier enum in the DB.
+
+```bash
+cd alter-scripts
+python alter-1.61.py
+```
+
+Expected output:
+```
+✓ Migrated mentor_tier values (NORMAL→IG_MENTOR, VERIFIED→MENTOR)
+✓ Altered user_mentor.mentor_tier enum
+✓ DB version set to 1.61
+```
+
+Verify:
+```sql
+SELECT mentor_tier, COUNT(*) FROM user_mentor GROUP BY mentor_tier;
+-- Should only show IG_MENTOR or MENTOR, no NORMAL or VERIFIED
+```
+
+---
+
+## Step B — Approve Mentor with `IG_MENTOR` Tier
+
+**Usage:** Admin approves an applicant as an IG-scoped mentor, with specific IGs they'll manage.
+
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/<mentor_user_mentor_pk>/verify/`  
+**Auth:** `ADMIN_TOKEN`
+
+**Request:**
+```json
+{
+  "action": "approve",
+  "mentor_tier": "IG_MENTOR",
+  "note": "Approved as Web Dev IG mentor"
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Mentor application approved. Mentor role assigned.",
+  "response": {
+    "mentor": {
+      "mentor_tier": "IG_MENTOR",
+      "is_verified": true
+    }
+  }
+}
+```
+
+**Side-effects:**
+- `UserRoleLink` created with `Mentor` role
+- `UserIgLink(assignment_type=MENTOR, is_active=True)` created for each `preferred_ig_ids` UUID
+- Notification sent to mentor
+
+---
+
+## Step C — Approve Mentor with `MENTOR` (Global) Tier
+
+**Usage:** Admin approves as a global mentor (no specific IG).
+
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/<pk>/verify/`  
+**Auth:** `ADMIN_TOKEN`
+
+**Request:**
+```json
+{
+  "action": "approve",
+  "mentor_tier": "MENTOR",
+  "note": "Approved as global mentor"
+}
+```
+
+**Side-effects:**
+- `UserRoleLink` created with `Mentor` role
+- **No** `UserIgLink` created (global mentors are not IG-scoped)
+- Notification sent
+
+---
+
+## Step D — IG_MENTOR Creates an IG Session
+
+**Usage:** A verified `IG_MENTOR` creates a session for one of their linked IGs. Goes directly to `SCHEDULED`.
+
+**Endpoint:** `POST /api/v1/dashboard/mentor/sessions/`  
+**Auth:** `IG_MENTOR_TOKEN` (verified `IG_MENTOR`)
+
+**Request:**
+```json
+{
+  "title": "React Hooks Deep Dive",
+  "description": "Advanced hooks patterns for production apps.",
+  "ig": "ig-uuid-web-dev",
+  "starts_at": "2024-07-15T10:00:00Z",
+  "ends_at": "2024-07-15T11:30:00Z",
+  "meeting_link": "https://meet.example.com/xyz"
+}
+```
+
+**Response (201):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Session created successfully.",
+  "response": {
+    "session": {
+      "status": "SCHEDULED",
+      "is_global": false,
+      "ig": "ig-uuid-web-dev"
+    }
+  }
+}
+```
+
+**Error — wrong IG (not linked):**
+```json
+{ "statusCode": 6001, "message": "You are not an IG Mentor for this interest group." }
+```
+
+---
+
+## Step E — IG_MENTOR Creates a Global Session
+
+**Usage:** An `IG_MENTOR` can also create global sessions (goes to PENDING_APPROVAL like the `MENTOR` tier).
+
+**Endpoint:** `POST /api/v1/dashboard/mentor/sessions/`  
+**Auth:** `IG_MENTOR_TOKEN`
+
+**Request:**
+```json
+{
+  "title": "Open Mentoring — Ask Me Anything",
+  "description": "A platform-wide open session for all learners.",
+  "starts_at": "2024-07-20T15:00:00Z",
+  "ends_at": "2024-07-20T16:00:00Z"
+}
+```
+> No `ig` field → treated as global.
+
+**Response (201):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Global session submitted for admin approval.",
+  "response": {
+    "session": {
+      "status": "PENDING_APPROVAL",
+      "is_global": true
+    }
+  }
+}
+```
+
+**Error — MENTOR tier trying IG session:**
+```json
+{ "statusCode": 6001, "message": "Global Mentors cannot create IG-scoped sessions." }
+```
+
+---
+
+## Step F — Verified Mentor Requests a New IG Link
+
+**Usage:** A verified mentor adds new IG UUIDs to their profile. Each new IG triggers a pending `UserIgLink` and notifies the IG Lead.
+
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/onboarding/`  
+**Auth:** `MENTOR_TOKEN` (must already be verified)
+
+**Request:**
+```json
+{
+  "preferred_ig_ids": ["ig-uuid-flutter", "ig-uuid-ai"]
+}
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Mentor profile updated."
+}
+```
+
+**What happens behind the scenes:**
+- For each new IG UUID (not already in `UserIgLink`):
+  - Creates `UserIgLink(assignment_type=MENTOR, is_active=False)` (pending)
+  - Notifies all `{ig_code} IGLead` role holders for that IG
+- Already-linked IGs are skipped silently
+
+**Verify (DB check):**
+```sql
+SELECT * FROM user_ig_link WHERE user_id = '<mentor_user_id>' AND is_active = FALSE;
+```
+
+---
+
+## Step G — IG Lead Views Pending Requests
+
+**Endpoint:** `GET /api/v1/dashboard/mentor/ig-requests/?ig_id=<ig-uuid-flutter>`  
+**Auth:** `IG_LEAD_TOKEN` (must have `{ig.code} IGLead` role)
+
+**Response (200):**
+```json
+{
+  "statusCode": 6000,
+  "response": {
+    "requests": [
+      {
+        "id": "uil-uuid-pending",
+        "user_id": "mentor-user-uuid",
+        "full_name": "Pranav Kumar",
+        "email": "pranav@mulearn.org",
+        "muid": "pranav@mulearn",
+        "ig_id": "ig-uuid-flutter",
+        "ig_name": "Flutter Development",
+        "requested_at": "2024-06-05T08:30:00Z"
+      }
+    ]
+  }
+}
+```
+
+**Error — not IG Lead for this IG:**
+```json
+{ "statusCode": 6001, "message": "You are not an IG Lead for this interest group." }
+```
+
+---
+
+## Step H — IG Lead Approves a Request
+
+**Endpoint:** `PATCH /api/v1/dashboard/mentor/ig-requests/uil-uuid-pending/`  
+**Auth:** `IG_LEAD_TOKEN`
+
+**Request:**
+```json
+{
+  "action": "approve"
+}
+```
+
+**Response (200):**
+```json
+{ "statusCode": 6000, "message": "Mentor approved for Flutter Development." }
+```
+
+**Side-effects:**
+- `UserIgLink.is_active = True` (was `False`)
+- Mentor gets notification: "✅ IG Mentor Request Approved — Flutter Development"
+- Mentor can now create sessions for Flutter IG
+
+---
+
+## Step H2 — IG Lead Rejects a Request
+
+**Request:**
+```json
+{
+  "action": "reject",
+  "note": "This IG already has enough mentors."
+}
+```
+
+**Response (200):**
+```json
+{ "statusCode": 6000, "message": "Mentor request for Flutter Development rejected." }
+```
+
+**Side-effects:**
+- `UserIgLink` row deleted (no pending tombstone)
+- Mentor gets notification: "❌ IG Mentor Request Not Approved — Flutter Development. Reason: This IG already has enough mentors."
+
+---
+
+## Step I — IG Lead Directly Assigns a Mentor
+
+**Usage:** IG Lead adds a user as a mentor by updating the IG's `mentors` list. System auto-creates all necessary rows.
+
+**Endpoint:** `PATCH /api/v1/dashboard/ig/get/<ig_pk>/`  
+**Auth:** `IG_LEAD_TOKEN` or `ADMIN_TOKEN`
+
+**Request:**
+```json
+{
+  "mentors": [
+    { "muid": "target-user@mulearn" }
   ]
 }
 ```
 
-**`status` allowed values:** `COMPLETED`, `CANCELLED`, `NO_SHOW` (only these in the update serializer).
-
-**Participant updates:** Each item matches session links; `participant_role` can be used in the filter when locating the link.
-
-**Constraints:** Session must exist; non-mentor participants get a permission-style failure message.
-
----
-
-## 14. Mentees — list
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/mentees/`
-
-**Usage:** Paginated mentees (users with `MENTEE` role in sessions) for sessions where you were **MENTOR**, filtered by IG (default active persona IG).
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Query parameters:** `ig_id` (optional override), plus pagination/search/sort: `pageIndex`, `perPage`, `search` (`full_name`, `muid`), `sortBy` (`full_name`, `karma`).
-
-**Response (`response`):**
-
+**Response (200):**
 ```json
 {
-  "active_ig_id": "<uuid>",
-  "data": [
-    {
-      "user_id": "<uuid>",
-      "full_name": "string",
-      "muid": "string",
-      "profile_pic": "url or null",
-      "karma": 0,
-      "level": "string or null",
-      "ig_karma": 0,
-      "ig_level": "string or null",
-      "session_count": 0,
-      "last_session_at": "2026-05-14T12:00:00+00:00"
-    }
-  ],
-  "pagination": { }
+  "statusCode": 6000,
+  "response": {
+    "interestGroup": { ... }
+  }
 }
 ```
 
-**Constraints:** If `ig_id` is overridden, results are still “mentees from sessions in that IG” but there is no extra role-link authorization check in this view.
+**Side-effects (per new mentor muid):**
+- `UserMentor` created with `is_verified=True`, `mentor_tier=IG_MENTOR` (if not exists)
+- `UserRoleLink` created with `Mentor` role (if not exists)
+- `UserIgLink(assignment_type=MENTOR, is_active=True)` created (if not exists)
+- Notification to newly assigned user: "🎓 You've been assigned as an IG Mentor — {ig_name}"
 
 ---
 
-## 15. Tasks — review queue
+## Step J — Mentor Views Their IGs
 
-**Endpoint:** `GET /api/v1/dashboard/mentor/tasks/queue/`
+**Endpoint:** `GET /api/v1/dashboard/mentor/my-igs/`  
+**Auth:** `IG_MENTOR_TOKEN`
 
-**Usage:** Paginated `KarmaActivityLog` rows for tasks in an IG, filtered by mentor review status.
-
-**Role / access:** **Authenticated** + **`IsVerifiedIGMentor`** (`UserMentor.is_verified` **and** `mentor_tier == "VERIFIED"`).
-
-**Query parameters:**
-
-| Param | Description |
-|-------|-------------|
-| `ig_id` | Optional; default = active persona IG. Must be an IG where you have an active Mentor `UserRoleLink`. |
-| `status` | `PENDING` (default), `APPROVED`, or `REJECTED` |
-
-Plus `pageIndex`, `perPage`, `search`, `sortBy` (`created_at`).
-
-**Response (`response`):**
-
+**Response (200):**
 ```json
 {
-  "active_ig_id": "<uuid>",
-  "data": [
-    {
-      "id": "<log uuid>",
-      "mentee_id": "<uuid>",
-      "mentee_name": "string",
-      "task_id": "<uuid>",
-      "task_title": "string",
-      "task_hashtag": "string",
-      "task_karma": 10,
-      "ig_name": "string",
-      "mentor_review_status": "PENDING",
-      "mentor_review_feedback": null,
-      "created_at": "..."
-    }
-  ],
-  "pagination": { }
+  "statusCode": 6000,
+  "response": {
+    "igs": [
+      {
+        "ig_id": "ig-uuid-web-dev",
+        "ig_name": "Web Development",
+        "ig_code": "WD"
+      },
+      {
+        "ig_id": "ig-uuid-flutter",
+        "ig_name": "Flutter Development",
+        "ig_code": "FLT"
+      }
+    ]
+  }
 }
 ```
 
-**Constraints:** Rejects invalid `status` filter. Rejects `ig_id` you are not a mentor for.
-
----
-
-## 16. Tasks — approve / reject submission
-
-**Endpoint:** `PATCH /api/v1/dashboard/mentor/tasks/queue/<log_id>/`
-
-**Usage:** Set `mentor_review_status` to `APPROVED` or `REJECTED`, record reviewer, timestamp, optional feedback. **Does not award karma** (noted in code: appraiser flow handles karma).
-
-**Role / access:** **Authenticated** + **`IsVerifiedIGMentor`**. Must have Mentor role on the task’s IG.
-
-**Request body (JSON):**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `status` | Yes | `APPROVED` or `REJECTED` (case-insensitive) |
-| `feedback` | No | String, max 500 chars |
-
-**Constraints:** Only logs currently in **`PENDING`** mentor review can be actioned.
-
-**Response:** Success with general message only (no detailed entity in success path).
-
----
-
-## 17. Task creation requests — list (mentor)
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/tasks/requests/`
-
-**Usage:** Paginated list of your own `MentorTaskRequest` rows for the **active persona IG**.
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Query parameters:** `status` optional: `PENDING`, `APPROVED`, `REJECTED`; pagination/search/sort as usual.
-
-**Response (`response`):**
-
-```json
-{
-  "data": [
-    {
-      "id": "<uuid>",
-      "mentor_name": "string",
-      "ig_name": "string",
-      "title": "string",
-      "hashtag": "string",
-      "karma": 10,
-      "description": "string or null",
-      "status": "PENDING",
-      "admin_note": "string or null",
-      "reviewed_by_name": "string or null",
-      "reviewed_at": "...",
-      "created_task_hashtag": "string or null",
-      "created_at": "..."
-    }
-  ],
-  "pagination": { }
-}
-```
-
----
-
-## 18. Task creation requests — submit (mentor)
-
-**Endpoint:** `POST /api/v1/dashboard/mentor/tasks/requests/`
-
-**Usage:** Create a pending request for admins to turn into a `TaskList` entry upon approval.
-
-**Role / access:** **Authenticated** + **`IsIGMentor`**.
-
-**Request body (JSON):**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `title` | Yes | Non-empty after trim |
-| `hashtag` | Yes | Non-empty after trim |
-| `karma` | Yes | Positive integer |
-| `description` | No | Trimmed; empty becomes null |
-
-**Constraints:**
-
-- No duplicate **pending** request for the same mentor + IG + hashtag (case-insensitive).
-
-**Response (`response`):** Single `MentorTaskRequestSerializer` object (same shape as list items).
-
----
-
-## 19. Admin — list all task creation requests
-
-**Endpoint:** `GET /api/v1/dashboard/mentor/admin/task-requests/`
-
-**Usage:** Global queue for mentor-proposed tasks.
-
-**Role / access:** **Authenticated** user with **`RoleType.ADMIN`** (`@role_required([RoleType.ADMIN.value])`). Uses `CustomizePermission` as `authentication_classes` (not the same stack as `IsIGMentor`).
-
-**Query parameters:**
-
-| Param | Description |
-|-------|-------------|
-| `status` | `PENDING` (default), `APPROVED`, `REJECTED`, or `ALL` |
-| `ig_id` | Filter by IG |
-
-**Response:** Same list envelope as mentor list (`data` + `pagination`).
-
----
-
-## 20. Admin — approve / reject task request
-
-**Endpoint:** `PATCH /api/v1/dashboard/mentor/admin/task-requests/<req_id>/`
-
-**Usage:** Approve (creates `TaskList` + links on request) or reject a pending mentor task request.
-
-**Role / access:** **`ADMIN`**.
-
-**Request body (JSON):**
-
-| Field | When | Description |
-|-------|------|---------------|
-| `action` | Always | `APPROVE` or `REJECT` |
-| `admin_note` | Optional | Max 500 chars |
-| `type_id` | **Approve** | Required — UUID of `TaskType` |
-| `level_id` | Approve | Optional UUID |
-| `discord_link` | Approve | Optional string |
-
-**Constraints:**
-
-- Request must be `PENDING`.
-- On approve: hashtag must not already exist in `TaskList` (case-insensitive).
-- On approve: `type_id` must resolve to a valid `TaskType`.
-
-**Response (`response`):** Serialized request after update (includes `created_task_hashtag` when applicable).
-
----
-
-## 21. Admin — mentor tier / verification
-
-**Endpoint:** `PATCH /api/v1/dashboard/mentor/admin/tier/<mentor_profile_id>/`
-
-**Usage:** Set `UserMentor.mentor_tier` to `NORMAL` or `VERIFIED`, with verification side effects.
-
-**Role / access:** **`ADMIN`**.
-
-**Request body (JSON):**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `tier` | Yes | `NORMAL` or `VERIFIED` |
-| `verification_note` | No | Max 500; stored when moving to verified |
-
-**Behavior summary:**
-
-- **`VERIFIED`:** sets `is_verified`, `verified_at`, `verified_by`, `verification_note`; sets **`verified = true`** on **all active** `UserRoleLink` rows for this user where `role.title == "Mentor"`**.
-- **`NORMAL`** when downgrading from **`VERIFIED`:** clears verification fields on `UserMentor`. Role-link `verified` flags are **not** automatically cleared (per code comments).
-
-**Response (`response`):**
-
-```json
-{
-  "mentor_profile_id": "<uuid>",
-  "user_id": "<uuid>",
-  "full_name": "string",
-  "mentor_tier": "VERIFIED",
-  "is_verified": true,
-  "verified_at": "...",
-  "verification_note": "string or null"
-}
-```
-
----
-
-## Verification matrix (mentor-facing)
-
-| Capability | Permission / check |
-|------------|----------------------|
-| Persona list / switch / reset | JWT only (switch validates Mentor role link) |
-| Profile, overview, availability, mentees, sessions list/patch, task requests | `IsIGMentor` |
-| Session **create** | `IsIGMentor` + `UserMentor.is_verified` |
-| Task review queue & patch | `IsVerifiedIGMentor` (`is_verified` **and** `mentor_tier == "VERIFIED"`) |
-| Admin task queue & tier | `RoleType.ADMIN` |
-
----
-
-## End-to-end flow diagram
-
-High-level journey from assignment to mentoring and admin operations:
-
-```mermaid
-flowchart TB
-  subgraph Auth
-    A[Login / JWT issued]
-  end
-
-  subgraph Assignment["Platform / admin (outside this doc)"]
-    B[Mentor UserRoleLink created for IG]
-    C[Optional: Admin PATCH tier to VERIFIED]
-  end
-
-  subgraph Persona["Dashboard mentor persona APIs"]
-    D[GET /persona/ig-roles/]
-    E[POST /persona/switch/]
-    F[GET /overview/ or /overview/home-summary/]
-  end
-
-  subgraph Profile["Profile & availability"]
-    G[GET/PATCH /profile/]
-    H[GET/POST /availability/]
-    I[DELETE /availability/slot_id/]
-  end
-
-  subgraph Sessions["Mentorship"]
-    J[POST /sessions/ if is_verified]
-    K[GET /sessions/]
-    L[PATCH /sessions/session_id/]
-    M[GET /mentees/]
-  end
-
-  subgraph Tasks["Tasks & reviews"]
-    N[POST /tasks/requests/]
-    O[GET /tasks/requests/]
-    P[GET /tasks/queue/ if VERIFIED tier + is_verified]
-    Q[PATCH /tasks/queue/log_id/]
-  end
-
-  subgraph AdminAPI["Admin-only under /mentor/admin/"]
-    R[GET/PATCH /admin/task-requests/...]
-    S[PATCH /admin/tier/mentor_profile_id/]
-  end
-
-  subgraph Exit
-    T[POST /persona/reset/]
-  end
-
-  A --> B
-  B --> D
-  C --> J
-  D --> E
-  E --> F
-  E --> G
-  G --> H
-  H --> J
-  J --> K
-  K --> L
-  L --> M
-  E --> N
-  N --> R
-  R --> O
-  C --> P
-  P --> Q
-  E --> T
-  S --> C
-```
-
----
-
-## Related code (for maintainers)
-
-| Concern | Location |
-|---------|----------|
-| URL routing | `api/dashboard/mentor/urls.py`, sub-`urls.py` per feature |
-| Persona DB rules | `api/dashboard/mentor/persona/persona_views.py`, `persona/serializers.py` |
-| Mentor permissions | `utils/mentor_permissions.py` |
-| Session serializers | `api/dashboard/mentor/sessions/serializers.py` |
-| Models | `db/mentor.py`, `db/user.py` (`UserMentor`, `UserSettings`), `db/mentor_task_request.py` |
-
----
-
-*Generated from repository source. If behavior diverges in deployment, trust the implementation in the paths above.*
