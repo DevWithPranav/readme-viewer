@@ -1,7 +1,7 @@
 # Mentor Dashboard API Documentation
 
 > **Base prefix**: `/api/v1/dashboard/mentor/`  
-> **Auth**: All endpoints require a valid JWT (`Authorization: Bearer <token>`).  
+> **Auth**: All endpoints require a valid JWT (`Authorization: Bearer <token>`), unless marked **[Public — no auth]**.  
 > **Roles**: `ADMIN` = platform admin · `MENTOR` = verified mentor
 
 ---
@@ -23,6 +23,11 @@
 13. [Session Reminder](#13-session-reminder)
 14. [My IGs](#14-my-igs)
 15. [IG Mentor Link Requests](#15-ig-mentor-link-requests)
+16. [Admin Mentor Tier Update](#16-admin-mentor-tier-update)
+17. [Bulk Attendance Update](#17-bulk-attendance-update)
+18. [Session Clone](#18-session-clone)
+19. [Availability Calendar](#19-availability-calendar)
+20. [Public Endpoints](#20-public-endpoints)
 
 ---
 
@@ -297,7 +302,7 @@ Single-call dashboard snapshot. Admins see platform-wide data; mentors see their
           "scheduled": 18,
           "completed": 74,
           "cancelled": 5,
-          "no_show": 2,
+          "rejected": 2,
           "total": 102
         },
         "upcoming": [
@@ -358,6 +363,8 @@ Single-call dashboard snapshot. Admins see platform-wide data; mentors see their
   }
 }
 ```
+
+> **Note**: Session counts now include `"rejected"` status in addition to `no_show` previously documented.
 
 **Response — Mentor (own) view**
 ```json
@@ -460,7 +467,7 @@ Paginated session list. Admin sees all sessions; mentor sees only their own.
 | Param | Type | Description |
 |---|---|---|
 | `ig_id` | UUID | Filter by Interest Group |
-| `status` | string | `SCHEDULED` `COMPLETED` `CANCELLED` `NO_SHOW` `PENDING_APPROVAL` |
+| `status` | string | `SCHEDULED` `COMPLETED` `CANCELLED` `REJECTED` `PENDING_APPROVAL` |
 | `is_global` | boolean string | `true` / `false` |
 | `search` | string | Search by title or IG name |
 | `sort_by` | string | `title`, `starts_at`, `status`, `created_at` |
@@ -677,9 +684,10 @@ Update only the status of a session. Uses strict transition rules.
 
 | From | To |
 |---|---|
-| `SCHEDULED` | `COMPLETED`, `CANCELLED`, `NO_SHOW` |
+| `SCHEDULED` | `COMPLETED`, `CANCELLED` |
 | `COMPLETED` | *(none)* |
 | `CANCELLED` | *(none)* |
+| `REJECTED` | *(none)* |
 | `PENDING_APPROVAL` | Use `/sessions/<id>/approve/` instead |
 
 **Request Body**
@@ -739,7 +747,7 @@ List all participants in a session.
 
 ### `POST /mentor/sessions/<session_id>/participants/`
 
-Add a participant to a session.
+Add a participant to a session. Enforces `max_participants` cap for `MENTEE` role.
 
 | | |
 |---|---|
@@ -775,6 +783,15 @@ Add a participant to a session.
 }
 ```
 
+**Error — Session full (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "Session capacity reached (30 mentees)."
+}
+```
+
 ---
 
 ### `DELETE /mentor/sessions/<session_id>/participants/<user_id>/`
@@ -785,6 +802,12 @@ Remove a participant from a session.
 |---|---|
 | **Roles** | ADMIN, MENTOR |
 | **Auth** | JWT required |
+
+**Query Parameters**
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `participant_role` | string | ✅ Yes | The role of the participant to remove (`MENTOR`, `CO_MENTOR`, `MENTEE`) |
 
 **Response — 200 OK**
 ```json
@@ -862,7 +885,7 @@ Approve or reject a pending global session. Optionally convert it to an IG-scope
 }
 ```
 
-> `ig_id` is optional. If provided on approve, the session is converted from global → IG-scoped.
+> `ig_id` is optional. If provided on approve, the session is converted from global → IG-scoped (`is_global` becomes `false`).
 
 **Request Body — Reject**
 ```json
@@ -872,7 +895,7 @@ Approve or reject a pending global session. Optionally convert it to an IG-scope
 }
 ```
 
-**Response — 200 OK**
+**Response — Approve (200 OK)**
 ```json
 {
   "hasError": false,
@@ -887,6 +910,18 @@ Approve or reject a pending global session. Optionally convert it to an IG-scope
       "approved_by": "admin-uuid-001",
       "approved_at": "2026-05-24T12:00:00Z"
     }
+  }
+}
+```
+
+**Response — Reject (200 OK)**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Global session rejected.",
+  "response": {
+    "session": { "status": "REJECTED", "...": "full session object" }
   }
 }
 ```
@@ -936,6 +971,40 @@ Paginated list of `KarmaActivityLog` entries pending mentor review. Mentors only
     }
   ],
   "pagination": { "count": 7, "totalPages": 1, "isNext": false, "isPrev": false }
+}
+```
+
+---
+
+### `GET /mentor/review-queue/<kal_id>/`
+
+Retrieve a single task submission entry. Mentors can only access entries from their own IGs.
+
+| | |
+|---|---|
+| **Roles** | ADMIN, MENTOR |
+| **Auth** | JWT required |
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "response": {
+    "submission": {
+      "id": "kal-uuid-001",
+      "user_id": "user-uuid-050",
+      "user_name": "Riya Sharma",
+      "task_id": "task-uuid-010",
+      "task_title": "Build a REST API",
+      "task_hashtag": "#restapi",
+      "ig_name": "Web Dev",
+      "karma": 500,
+      "mentor_review_status": "PENDING",
+      "submission_url": "https://github.com/riya/rest-api-project",
+      "submitted_at": "2026-05-23T08:00:00Z"
+    }
+  }
 }
 ```
 
@@ -1286,6 +1355,35 @@ Admin reviews (approve or reject) a pending task request. On approval, a `TaskLi
 
 ---
 
+### `DELETE /mentor/task-requests/<task_request_id>/`
+
+Mentor withdraws their own **PENDING** task request before admin review. Only `PENDING` requests can be withdrawn.
+
+| | |
+|---|---|
+| **Roles** | MENTOR only |
+| **Auth** | JWT required |
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Task request withdrawn successfully."
+}
+```
+
+**Error — Not pending (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "Cannot withdraw a task request with status 'APPROVED'. Only PENDING requests can be withdrawn."
+}
+```
+
+---
+
 ## 10. Opportunities
 
 ### `GET /mentor/opportunities/`
@@ -1422,7 +1520,7 @@ Partially update an opportunity.
 
 ### `DELETE /mentor/opportunities/<opportunity_id>/`
 
-Archive (soft-delete) an opportunity.
+Archive (soft-delete) an opportunity (sets status to `ARCHIVED`).
 
 | | |
 |---|---|
@@ -1481,6 +1579,59 @@ Paginated list of distinct mentees across sessions.
     }
   ],
   "pagination": { "count": 210, "totalPages": 21, "isNext": true, "isPrev": false }
+}
+```
+
+---
+
+### `GET /mentor/mentees/<user_id>/`
+
+Full profile of a single mentee: user info, shared sessions, karma earned, and task review stats.  
+Mentors only see mentees from sessions they were a MENTOR/CO_MENTOR in.
+
+| | |
+|---|---|
+| **Roles** | ADMIN, MENTOR |
+| **Auth** | JWT required |
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "response": {
+    "mentee": {
+      "user_id": "user-uuid-050",
+      "full_name": "Riya Sharma",
+      "email": "riya@example.com",
+      "muid": "riya@mulearn",
+      "total_sessions": 5,
+      "completed_sessions": 4,
+      "total_karma_earned": 1500,
+      "tasks_reviewed": 3,
+      "tasks_approved": 2,
+      "tasks_rejected": 1,
+      "sessions": [
+        {
+          "session_id": "sess-uuid-001",
+          "title": "Intro to DRF",
+          "ig_name": "Web Dev",
+          "status": "COMPLETED",
+          "starts_at": "2026-05-25T14:00:00Z",
+          "ends_at": "2026-05-25T16:00:00Z"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Error — No shared sessions (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "Mentee has no sessions with you."
 }
 ```
 
@@ -1570,7 +1721,7 @@ List karma awards for a session.
 ### `POST /mentor/sessions/<session_id>/karma-award/`
 
 Admin awards karma to a mentor for a **COMPLETED** session. One award per mentor per session.  
-Also increments the mentor's `hours` by 1.
+Also increments the mentor's `hours` by 1 and updates their wallet karma.
 
 | | |
 |---|---|
@@ -1616,6 +1767,15 @@ Also increments the mentor's `hours` by 1.
 }
 ```
 
+**Error — Not a MENTOR participant (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "User is not a MENTOR participant in this session."
+}
+```
+
 **Error — Already awarded (400)**
 ```json
 {
@@ -1631,7 +1791,8 @@ Also increments the mentor's `hours` by 1.
 
 ### `POST /mentor/sessions/<session_id>/remind/`
 
-Send reminder notifications to all `INVITED` or `ATTENDED` participants. Only works for sessions in `SCHEDULED` or `PENDING_APPROVAL` status.
+Send reminder notifications to all `INVITED` or `ATTENDED` participants. Only works for sessions in `SCHEDULED` or `PENDING_APPROVAL` status.  
+A **12-hour cooldown** is enforced between consecutive reminders for the same session.
 
 | | |
 |---|---|
@@ -1653,6 +1814,15 @@ Send reminder notifications to all `INVITED` or `ATTENDED` participants. Only wo
   "hasError": true,
   "statusCode": 400,
   "message": "Reminders can only be sent for SCHEDULED or PENDING_APPROVAL sessions."
+}
+```
+
+**Error — Cooldown active (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "Cooldown active. Please wait 5 hours before sending another reminder."
 }
 ```
 
@@ -1781,6 +1951,343 @@ IG Lead (or Admin) approves or rejects a pending mentor IG link request.
 
 ---
 
+## 16. Admin Mentor Tier Update
+
+### `PATCH /mentor/list/<mentor_id>/tier/`
+
+Change the `mentor_tier` of an already-verified mentor. Sends a notification to the mentor.  
+Cannot be used on unverified mentors (approve the application first).
+
+| | |
+|---|---|
+| **Roles** | ADMIN only |
+| **Auth** | JWT required |
+
+**Request Body**
+```json
+{
+  "mentor_tier": "MENTOR"
+}
+```
+
+> `mentor_tier`: `"IG_MENTOR"` | `"MENTOR"`
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Mentor tier updated from 'IG_MENTOR' to 'MENTOR'.",
+  "response": {
+    "mentor": { "...": "full mentor object" }
+  }
+}
+```
+
+**Error — Not verified (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "Cannot change the tier of an unverified mentor. Approve the application first."
+}
+```
+
+**Response — No change (200 OK)**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Mentor is already at tier 'MENTOR'. No change made."
+}
+```
+
+---
+
+## 17. Bulk Attendance Update
+
+### `PATCH /mentor/sessions/<session_id>/attendance/`
+
+Bulk-update `attendance_status` for multiple participants in a single request.  
+Admin can update any session; Mentors can only update sessions they created.  
+Every `user_id` in the body must already be a participant in the session.
+
+| | |
+|---|---|
+| **Roles** | ADMIN, MENTOR |
+| **Auth** | JWT required |
+
+**Request Body**
+```json
+{
+  "participants": [
+    { "user_id": "user-uuid-050", "attendance_status": "ATTENDED" },
+    { "user_id": "user-uuid-075", "attendance_status": "ABSENT" },
+    { "user_id": "user-uuid-088", "attendance_status": "NO_SHOW" }
+  ]
+}
+```
+
+> `attendance_status`: `INVITED` | `ATTENDED` | `ABSENT` | `NO_SHOW`
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Attendance updated for 3 participant(s)."
+}
+```
+
+**Error — Non-participants found (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "The following users are not participants in this session: user-uuid-999"
+}
+```
+
+---
+
+## 18. Session Clone
+
+### `POST /mentor/sessions/<session_id>/clone/`
+
+Deep-copies a session with the following rules:
+- **title** → `"Copy of <original title>"`
+- **status** → `PENDING_APPROVAL` (if global) or `SCHEDULED` (if IG-scoped)
+- **starts_at / ends_at** → cleared (`null`) — caller must `PATCH` to set new times
+- All other fields (description, mode, ig, max_participants, meeting_link, venue, is_global) are preserved
+- Creator is automatically added as `MENTOR` participant
+- Original participants are **NOT** copied
+
+Mentors can only clone sessions they created.
+
+| | |
+|---|---|
+| **Roles** | ADMIN, MENTOR |
+| **Auth** | JWT required |
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Session cloned successfully. Update starts_at and ends_at before publishing.",
+  "response": {
+    "session": {
+      "id": "sess-uuid-200",
+      "title": "Copy of Intro to Django REST Framework",
+      "is_global": false,
+      "status": "SCHEDULED",
+      "starts_at": null,
+      "ends_at": null,
+      "ig": "ig-uuid-001",
+      "participants": [
+        {
+          "user_id": "user-uuid-001",
+          "full_name": "Arjun Nair",
+          "participant_role": "MENTOR",
+          "attendance_status": "INVITED"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Error — Not creator (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "You can only clone sessions you created."
+}
+```
+
+---
+
+## 19. Availability Calendar
+
+### `GET /mentor/availability/calendar/`
+
+Returns all active availability slots formatted for calendar widget consumption.  
+Mentors receive only their own slots; Admins receive all mentor slots.
+
+| | |
+|---|---|
+| **Roles** | ADMIN, MENTOR |
+| **Auth** | JWT required |
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "response": [
+    {
+      "id": "slot-uuid-001",
+      "mentor_user_id": "user-uuid-001",
+      "mentor_name": "Arjun Nair",
+      "ig_id": "ig-uuid-001",
+      "ig_name": "Web Dev",
+      "weekday": 1,
+      "start_time": "14:00:00",
+      "end_time": "16:00:00",
+      "timezone": "Asia/Kolkata",
+      "is_active": true
+    }
+  ]
+}
+```
+
+> **Note**: Unlike `GET /availability/`, this endpoint returns all slots in a flat list without pagination, optimised for rendering in calendar UIs.
+
+---
+
+## 20. Public Endpoints
+
+All endpoints in this section require **no authentication**.
+
+---
+
+### `GET /mentor/<muid>/public/`
+
+Public read-only mentor profile card. Only returns verified mentors.
+
+| | |
+|---|---|
+| **Roles** | Public — no auth |
+| **Auth** | None |
+
+**Path Parameters**
+
+| Param | Description |
+|---|---|
+| `muid` | The mentor's muLearn user ID (e.g. `arjun@mulearn`) |
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "response": {
+    "full_name": "Arjun Nair",
+    "muid": "arjun@mulearn",
+    "profile_pic": "https://cdn.example.com/pics/arjun.jpg",
+    "about": "Passionate about open-source and teaching.",
+    "expertise": ["Python", "Django", "REST APIs"],
+    "mentor_tier": "IG_MENTOR",
+    "hours": 12
+  }
+}
+```
+
+**Error — Not found (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "Verified mentor profile not found."
+}
+```
+
+---
+
+### `GET /mentor/<muid>/public/sessions/`
+
+Paginated list of **completed** sessions where the mentor was `MENTOR` or `CO_MENTOR`.
+
+| | |
+|---|---|
+| **Roles** | Public — no auth |
+| **Auth** | None |
+
+**Query Parameters**
+
+| Param | Type | Description |
+|---|---|---|
+| `ig_id` | UUID | Filter by Interest Group |
+| `mode` | string | Filter by session mode (`ONLINE`, `OFFLINE`, `HYBRID`) |
+| `sort_by` | string | `starts_at`, `title` |
+| `pageIndex` | int | Page number |
+| `perPage` | int | Page size |
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "response": [
+    {
+      "id": "sess-uuid-001",
+      "title": "Intro to Django REST Framework",
+      "ig_name": "Web Dev",
+      "status": "COMPLETED",
+      "starts_at": "2026-05-25T14:00:00Z",
+      "ends_at": "2026-05-25T16:00:00Z"
+    }
+  ],
+  "pagination": { "count": 20, "totalPages": 2, "isNext": true, "isPrev": false }
+}
+```
+
+---
+
+### `GET /mentor/availability/public/?mentor_muid=<muid>`
+
+Public availability slots for a verified mentor. Useful for mentee scheduling flows.
+
+| | |
+|---|---|
+| **Roles** | Public — no auth |
+| **Auth** | None |
+
+**Query Parameters**
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `mentor_muid` | string | ✅ Yes | The mentor's muLearn user ID |
+| `ig_id` | UUID | No | Filter slots by Interest Group |
+
+**Response — 200 OK**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "response": {
+    "mentor": {
+      "full_name": "Arjun Nair",
+      "muid": "arjun@mulearn"
+    },
+    "availability": [
+      {
+        "id": "slot-uuid-001",
+        "ig_id": "ig-uuid-001",
+        "ig_name": "Web Dev",
+        "weekday": 1,
+        "start_time": "14:00:00",
+        "end_time": "16:00:00",
+        "timezone": "Asia/Kolkata",
+        "is_active": true
+      }
+    ]
+  }
+}
+```
+
+**Error — Missing param (400)**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "'mentor_muid' query parameter is required."
+}
+```
+
+---
+
 ## Common Error Responses
 
 | Scenario | Status | Example message |
@@ -1790,6 +2297,7 @@ IG Lead (or Admin) approves or rejects a pending mentor IG link request.
 | Resource not found | `400` | `"Session not found."` |
 | Validation error | `400` | `{ "title": ["This field is required."] }` |
 | Duplicate action | `400` | `"Karma already awarded to this mentor for this session."` |
+| Cooldown active | `400` | `"Cooldown active. Please wait 5 hours before sending another reminder."` |
 
 ---
 
