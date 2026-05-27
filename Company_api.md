@@ -1,409 +1,270 @@
-# Company Dashboard API Reference
+# Company Dashboard Comprehensive API Spec
 
 Base path: `/api/v1/dashboard/company/`
 
-This document covers every endpoint available in the company dashboard module.  
-Code lives under `api/dashboard/company/`.
+Public tracking path: `/api/v1/public/`
 
----
+Authentication: company-dashboard endpoints require `Authorization: Bearer <access_token>` and an active company profile unless explicitly marked public.
 
-## Common Response Envelope
-
-All endpoints use the `CustomResponse` wrapper:
+Common success envelope:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Success message"] },
+  "message": {
+    "general": ["Success"]
+  },
   "response": {}
 }
 ```
 
-Failure responses use `"hasError": true` with an `"error_code"` key inside `message`.
-
----
-
-## Authentication
-
-All company-dashboard endpoints (except public profile endpoints) require:
-
-```
-Authorization: Bearer <access_token>
-```
-
-The company user must have:
-1. A `UserRoleLink` with `role.title = "Company"`
-2. An associated `Company` record (usually `status = "active"`, except onboarding endpoints which also allow `pending_verification` and `rejected`)
-
----
-
-## Modules
-
-| Module | Base Path |
-|--------|-----------|
-| [Onboarding](#1-onboarding) | `company/` |
-| [Profile](#2-profile) | `company/profile/` |
-| [Jobs](#3-jobs) | `company/jobs/` |
-| [Job Rules](#4-job-rules) | `company/jobs/<job_id>/rules/` |
-| [Applications (Company View)](#5-applications-company-view) | `company/jobs/<job_id>/applicants/` |
-| [Applications (Learner View)](#6-applications-learner-view) | `company/applications/` |
-| [Tasks](#7-tasks) | `company/tasks/` |
-| [Members](#8-members) | `company/members/` |
-| [Learner Discovery](#9-learner-discovery) | `company/learners/` |
-| [Analytics](#10-analytics) | `company/` |
-| [Admin Task Approval](#11-admin-task-approval) | `dashboard/task/` |
-
----
-
-## 1. Onboarding
-
-### POST `company/create/`
-
-Create a new company account. No authentication required.
-
-**Request body:**
+Common failure envelope:
 
 ```json
 {
-  "name": "Acme Labs",
-  "poc_name": "Jane Doe",
-  "poc_email": "jane@acme.com",
-  "password": "StrongPass123",
-  "poc_phone": "+919999999999",
-  "website_link": "https://acme.com",
-  "description": "A product engineering company",
-  "industry_sector": "Technology",
-  "location": "Kochi, Kerala",
-  "district_id": "district-uuid",
-  "legal_name": "Acme Labs Private Limited",
-  "registration_number": "REG-12345",
-  "tax_id": "GSTIN-12345",
-  "company_size": "51-200",
-  "linkedin_url": "https://linkedin.com/company/acme",
-  "verification_document_url": "https://example.com/proof.pdf"
+  "hasError": true,
+  "statusCode": 400,
+  "message": {
+    "general": ["Validation failed"],
+    "error_code": "VALIDATION_ERROR"
+  },
+  "response": {}
 }
 ```
 
-Required: `name`, `poc_name`, `poc_email`, `password`
+## Endpoint Summary
 
-**Success response:**
+| Endpoint | Method | Usage Scenario |
+|---|---:|---|
+| `/api/v1/dashboard/company/home-summary/` | `GET` | Company sees jobs, applications, hires, profile status, and talent-pool snapshot. |
+| `/api/v1/dashboard/company/profile/` | `GET` | Company views its own profile and verification status. |
+| `/api/v1/dashboard/company/profile/` | `PATCH` | Company updates profile fields such as logo, description, tech stack, perks, and gallery. |
+| `/api/v1/dashboard/company/jobs/` | `GET` | Company lists all posted jobs, gigs, internships, and opportunities. |
+| `/api/v1/dashboard/company/jobs/create/` | `POST` | Company posts a job, internship, gig, or PoW-gated opportunity. |
+| `/api/v1/dashboard/company/jobs/<job_id>/details/` | `GET` | Company opens one job with rules, linked task, and application summary. |
+| `/api/v1/dashboard/company/jobs/<job_id>/` | `PATCH` | Company updates a job, closes it, or changes eligibility. |
+| `/api/v1/dashboard/company/jobs/<job_id>/analytics/` | `GET` | Company reviews views, applications, shortlists, hires, and conversion rates. |
+| `/api/v1/public/jobs/<job_id>/view/` | `POST` | Frontend records a public job view for analytics. |
+| `/api/v1/dashboard/company/jobs/<job_id>/applications/` | `GET` | Company views applicants for one job. |
+| `/api/v1/dashboard/company/jobs/<job_id>/applications/<app_id>/` | `PATCH` | Company changes application status through the hiring workflow. |
+| `/api/v1/dashboard/company/learners/` | `GET` | Company discovers learners by karma, level, IG, achievement, skill, and work preference. |
+| `/api/v1/dashboard/company/learners/<user_id>/shortlist/` | `POST` | Company saves a learner for follow-up or links them to a job. |
+| `/api/v1/dashboard/company/shortlists/` | `GET` | Company views saved learners and follow-up status. |
+| `/api/v1/dashboard/company/tasks/` | `GET` | Company lists its submitted PoW tasks and approval status. |
+| `/api/v1/dashboard/company/tasks/submit/` | `POST` | Company submits a proof-of-work task for admin review. |
+| `/api/v1/dashboard/company/badges/` | `GET` | Company views reputation badges earned on the platform. |
+| `/api/v1/dashboard/company/engagement-score/` | `GET` | Company sees overall engagement score and improvement actions. |
+| `/api/v1/dashboard/company/ig-collaboration-requests/` | `POST` | Company requests collaboration with an Interest Group. |
+| `/api/v1/dashboard/company/events/request/` | `POST` | Company requests to host or co-host an event. |
+
+## 1. Dashboard Home Summary
+
+Endpoint: `GET /api/v1/dashboard/company/home-summary/`
+
+Usage: Used on the first dashboard screen. The company gets a quick health snapshot: active jobs, applications, hires, task approvals, pending actions, and talent-pool highlights.
+
+Query params:
+
+| Param | Type | Required | Notes |
+|---|---|---:|---|
+| `period` | string | No | `7d`, `30d`, `90d`; default `30d`. |
+
+Request body: none.
+
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Company registration submitted successfully"] },
+  "message": {
+    "general": ["Company dashboard summary fetched successfully"]
+  },
   "response": {
-    "company_id": "uuid",
-    "slug": "acme-labs",
-    "muid": "jane-doe@mulearn",
-    "status": "pending_verification",
-    "auth": {
-      "access": "<jwt>",
-      "refresh": "<jwt>",
-      "data": {
-        "id": "user-uuid",
-        "muid": "jane-doe@mulearn",
-        "email": "jane@acme.com",
-        "role": null,
-        "full_name": "Jane Doe"
+    "company": {
+      "id": "company-uuid",
+      "name": "Acme Labs",
+      "slug": "acme-labs",
+      "status": "active",
+      "logo": "https://cdn.example.com/acme-logo.png"
+    },
+    "stat_cards": [
+      {
+        "key": "jobs_posted",
+        "label": "Jobs posted",
+        "value": 8,
+        "delta": 2,
+        "delta_type": "increase",
+        "period": "30d"
+      },
+      {
+        "key": "applications",
+        "label": "Applications",
+        "value": 126,
+        "delta": 34,
+        "delta_type": "increase",
+        "period": "30d"
+      },
+      {
+        "key": "hired",
+        "label": "Hired",
+        "value": 7,
+        "delta": 2,
+        "delta_type": "increase",
+        "period": "30d"
+      },
+      {
+        "key": "pending_reviews",
+        "label": "Pending reviews",
+        "value": 14,
+        "delta": 4,
+        "delta_type": "neutral",
+        "period": "30d"
       }
+    ],
+    "pending_actions": {
+      "pending_task_reviews": 2,
+      "unreviewed_applications": 14,
+      "profile_completion_percentage": 82
+    },
+    "talent_pool": {
+      "total_learners": 1240,
+      "active_learners": 380,
+      "top_interest_groups": [
+        {
+          "ig_id": "ig-uuid",
+          "name": "Web Development",
+          "learner_count": 420
+        }
+      ]
     }
   }
 }
 ```
 
-**Error codes:**
+## 2. Company Profile
 
-| Code | HTTP | Description |
-|------|------|-------------|
-| `VALIDATION_ERROR` | 400 | Missing/invalid required fields |
-| `DUPLICATE_POC_EMAIL` | 409 | Email already registered |
-| `DUPLICATE_POC_PHONE` | 409 | Phone already registered |
-| `DUPLICATE_COMPANY_NAME` | 409 | Company name taken |
+Endpoint: `GET /api/v1/dashboard/company/profile/`
 
----
+Usage: Company views editable profile information, verification metadata, public page content, and employer-brand fields.
 
-### GET `company/onboarding/status/`
+Request body: none.
 
-Returns the current onboarding status for the authenticated company user.
-
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Company onboarding status fetched successfully"] },
-  "response": {
-    "id": "company-uuid",
-    "name": "Acme Labs",
-    "slug": "acme-labs",
-    "status": "pending_verification",
-    "poc_name": "Jane Doe",
-    "poc_email": "jane@acme.com",
-    "rejection_reason": null,
-    "verification_requested_at": "2026-04-05T10:00:00+05:30",
-    "verified_at": null,
-    "created_at": "2026-04-05T10:00:00+05:30",
-    "updated_at": "2026-04-05T10:00:00+05:30",
-    "can_edit_profile": true,
-    "can_access_advanced_features": false,
-    "next_steps": ["Wait for admin verification approval"]
-  }
-}
-```
-
----
-
-### POST `company/verification/resubmit/`
-
-Resubmit a rejected company verification request.
-
-**Request body:** None required.
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Company verification request resubmitted successfully"] },
-  "response": {
-    "company_id": "company-uuid",
-    "status": "pending_verification",
-    "verification_requested_at": "2026-05-27T10:00:00+05:30"
-  }
-}
-```
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `COMPANY_NOT_REJECTED` | 400 | Company is not in `rejected` status |
-| `NO_COMPANY_FOUND` | 404 | No company found for this user |
-
----
-
-## 2. Profile
-
-### GET `company/profile/`
-
-Fetch the authenticated company's profile.
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Company profile fetched successfully"] },
+  "message": {
+    "general": ["Company profile fetched successfully"]
+  },
   "response": {
     "id": "company-uuid",
     "name": "Acme Labs",
     "slug": "acme-labs",
     "logo": "https://cdn.example.com/logo.png",
-    "description": "A product engineering company",
+    "description": "A product engineering company.",
     "industry_sector": "Technology",
-    "website_link": "https://acme.com",
-    "email": "contact@acme.com",
+    "website_link": "https://acme.example",
+    "email": "careers@acme.example",
     "location": "Kochi, Kerala",
     "status": "active",
-    "legal_name": "Acme Labs Private Limited",
-    "registration_number": "REG-12345",
-    "tax_id": "GSTIN-12345",
     "company_size": "51-200",
     "linkedin_url": "https://linkedin.com/company/acme",
-    "verification_document_url": "https://example.com/proof.pdf",
-    "founded_year": 2018,
-    "remote_policy": "Hybrid",
-    "culture_text": "We move fast and care deeply.",
-    "tech_stack": ["Python", "React", "PostgreSQL"],
-    "perks": ["Health Insurance", "Remote Fridays"],
-    "testimonials": [],
-    "gallery": [],
-    "rejection_reason": null,
-    "verified_at": "2026-01-10T09:00:00+05:30",
-    "created_at": "2026-01-01T10:00:00+05:30",
-    "updated_at": "2026-05-01T10:00:00+05:30"
-  }
-}
-```
-
----
-
-### POST `company/profile/`
-
-Create a company profile (used after initial onboarding if the profile was deleted/incomplete).
-
-**Request body:** Same fields as the profile GET response (all optional except `name`).
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `COMPANY_ALREADY_EXISTS` | 409 | A profile already exists for this user |
-| `DUPLICATE_COMPANY_NAME` | 409 | Name taken |
-| `DUPLICATE_SLUG` | 409 | Slug taken |
-
----
-
-### PATCH `company/profile/`
-
-Partially update the authenticated company's profile. Send only the fields to change.
-
-**Example request:**
-
-```json
-{
-  "description": "Updated description",
-  "tech_stack": ["Python", "Django", "Next.js"],
-  "perks": ["Health Insurance", "WFH"]
-}
-```
-
-**Success response:** Same shape as GET, with updated values.
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `NO_FIELDS_TO_UPDATE` | 400 | Empty body |
-| `DUPLICATE_COMPANY_NAME` | 409 | Name collision |
-| `DUPLICATE_SLUG` | 409 | Slug collision |
-
----
-
-### DELETE `company/profile/`
-
-Soft-deletes the company profile (`status → inactive`, `deleted_at` stamped).
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Company profile deleted successfully"] },
-  "response": {
-    "company_id": "uuid",
-    "status": "inactive",
-    "deleted_at": "2026-05-27T10:00:00+05:30"
-  }
-}
-```
-
----
-
-### GET `company/profile/public/<slug>/`
-
-Public endpoint. No authentication required.
-
-**Success response:** Same as company profile GET but limited to public-facing fields.
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `COMPANY_NOT_FOUND` | 404 | Company not found or not active |
-
----
-
-### GET `company/profile/public/<slug>/jobs/`
-
-Public endpoint. Returns active jobs for a company. Paginated.
-
-**Query params:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `search` | string | Filter by title, location, job_type |
-| `sortBy` | string | `title` or `createdAt` (default `createdAt`) |
-| `page` | int | Page number |
-| `perPage` | int | Page size |
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Public company jobs fetched successfully"] },
-  "response": {
-    "company": {
-      "id": "company-uuid",
-      "name": "Acme Labs",
-      "slug": "acme-labs"
-    },
-    "jobs": [
+    "tech_stack": ["Python", "Django", "React"],
+    "perks": ["Hybrid work", "Mentorship"],
+    "testimonials": [
       {
-        "id": "job-uuid",
-        "title": "Backend Engineer",
-        "experience": "1-3 years",
-        "job_description": "Build and maintain APIs...",
-        "job_type": "Full-Time",
-        "location": "Kochi",
-        "salary_range": "6-10 LPA",
-        "min_karma": 1000,
-        "min_level": 3,
-        "status": "Active",
-        "karma_reward": 500,
-        "requires_task_completion": false,
-        "linked_task_info": null,
-        "rules": [],
-        "created_at": "2026-05-01T10:00:00+05:30",
-        "updated_at": "2026-05-20T10:00:00+05:30"
+        "name": "Riya Sharma",
+        "role": "Backend Intern",
+        "quote": "The PoW challenge helped me show real skills."
       }
     ],
-    "pagination": {
-      "count": 1,
-      "totalPages": 1,
-      "isNext": false,
-      "isPrev": false
-    }
+    "gallery": [
+      "https://cdn.example.com/acme-office.jpg"
+    ],
+    "verified_at": "2026-05-20T10:00:00+05:30",
+    "rejection_reason": null
   }
 }
 ```
 
----
+Endpoint: `PATCH /api/v1/dashboard/company/profile/`
 
-## 3. Jobs
+Usage: Company updates profile data shown to learners, partners, and admins.
 
-### GET `company/jobs/`
+Request body:
 
-List all non-deleted jobs for the authenticated company.
+```json
+{
+  "description": "We build reliable fintech products.",
+  "tech_stack": ["Python", "Django", "PostgreSQL", "React"],
+  "perks": ["Flexible hours", "Learning budget"],
+  "gallery": [
+    "https://cdn.example.com/acme-team.jpg"
+  ]
+}
+```
 
-**Query params:** `search`, `sortBy`, `page`, `perPage`
-
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Jobs fetched successfully"] },
+  "message": {
+    "general": ["Company profile updated successfully"]
+  },
+  "response": {
+    "id": "company-uuid",
+    "name": "Acme Labs",
+    "description": "We build reliable fintech products.",
+    "tech_stack": ["Python", "Django", "PostgreSQL", "React"],
+    "updated_at": "2026-05-28T09:30:00+05:30"
+  }
+}
+```
+
+## 3. Job List
+
+Endpoint: `GET /api/v1/dashboard/company/jobs/`
+
+Usage: Company lists all opportunities it has posted, including active, draft, closed, and expired jobs.
+
+Query params:
+
+| Param | Type | Required | Notes |
+|---|---|---:|---|
+| `search` | string | No | Search by title, location, job type. |
+| `status` | string | No | `Draft`, `Active`, `Closed`, `Expired`. |
+| `job_type` | string | No | `Full-Time`, `Internship`, `Gig`, `Remote`, `Hybrid`, `Part-Time`. |
+| `pageIndex` | integer | No | Page number. |
+| `perPage` | integer | No | Items per page. |
+
+Request body: none.
+
+Response body:
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": {
+    "general": ["Jobs fetched successfully"]
+  },
   "response": {
     "jobs": [
       {
         "id": "job-uuid",
-        "title": "Backend Engineer",
-        "experience": "1-3 years",
-        "job_description": "Build and maintain APIs...",
-        "job_type": "Full-Time",
-        "location": "Kochi",
-        "salary_range": "6-10 LPA",
+        "title": "Backend Engineering Intern",
+        "job_type": "Internship",
+        "location": "Remote",
+        "status": "Active",
+        "salary_range": "15000-25000 INR",
         "min_karma": 1000,
         "min_level": 3,
-        "status": "Active",
-        "karma_reward": 500,
-        "duration_value": null,
-        "duration_unit": null,
-        "hourly_rate": null,
-        "deliverables": null,
-        "stipend": null,
-        "certificate_provided": null,
         "requires_task_completion": true,
         "linked_task_info": {
           "id": "task-uuid",
@@ -411,20 +272,12 @@ List all non-deleted jobs for the authenticated company.
           "title": "Build a REST API",
           "karma": 200
         },
-        "rules": [
-          {
-            "id": "rule-uuid",
-            "rule_type": "skill",
-            "rule_type_id": "skill-uuid",
-            "rule_name": "Python"
-          }
-        ],
-        "created_at": "2026-05-01T10:00:00+05:30",
-        "updated_at": "2026-05-20T10:00:00+05:30"
+        "application_count": 32,
+        "created_at": "2026-05-10T10:00:00+05:30"
       }
     ],
     "pagination": {
-      "count": 5,
+      "count": 8,
       "totalPages": 1,
       "isNext": false,
       "isPrev": false
@@ -433,164 +286,268 @@ List all non-deleted jobs for the authenticated company.
 }
 ```
 
----
+## 4. Create Job, Internship, or Gig
 
-### POST `company/jobs/create/`
+Endpoint: `POST /api/v1/dashboard/company/jobs/create/`
 
-Create a new job listing.
+Usage: Company posts a new hiring opportunity. It can optionally require a learner to complete a PoW task before applying.
 
-**Request body:**
+Request body:
 
 ```json
 {
-  "company_id": "company-uuid",
-  "title": "Backend Engineer",
-  "experience": "1-3 years",
-  "job_description": "Build and maintain REST APIs...",
-  "location": "Kochi",
-  "salary_range": "6-10 LPA",
-  "job_type": "Full-Time",
+  "title": "Backend Engineering Intern",
+  "experience": "0-1 years",
+  "job_description": "Build APIs, write tests, and document endpoints.",
+  "job_type": "Internship",
+  "location": "Remote",
+  "salary_range": "15000-25000 INR",
   "min_karma": 1000,
   "min_level": 3,
+  "duration_value": 3,
+  "duration_unit": "months",
+  "stipend": "20000 INR",
+  "certificate_provided": true,
   "karma_reward": 500,
   "requires_task_completion": true,
-  "linked_task_id": "task-uuid"
+  "linked_task_id": "task-uuid",
+  "rules": [
+    {
+      "rule_type": "skill",
+      "rule_type_id": "skill-uuid"
+    },
+    {
+      "rule_type": "interest_group",
+      "rule_type_id": "ig-uuid"
+    }
+  ]
 }
 ```
 
-`job_type` choices: `Hybrid`, `Full-Time`, `Remote`, `Part-Time`, `Internship`, `Gig`
-
-For `Gig` type, also send: `duration_value`, `duration_unit` (days/weeks/months), `hourly_rate`, `deliverables` (array of strings)
-
-For `Internship` type, also send: `duration_value`, `duration_unit`, `stipend`, `certificate_provided` (bool)
-
-> If `requires_task_completion = true`, `linked_task_id` is required and must point to an approved, active task.
-
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Job created successfully"] },
+  "message": {
+    "general": ["Job created successfully"]
+  },
   "response": {
     "job_id": "job-uuid",
-    "title": "Backend Engineer",
+    "title": "Backend Engineering Intern",
     "status": "Active",
     "company_id": "company-uuid"
   }
 }
 ```
 
-**Error codes:**
+## 5. Job Details
 
-| Code | HTTP | Description |
-|------|------|-------------|
-| `VALIDATION_ERROR` | 400 | Invalid fields |
-| `COMPANY_NOT_FOUND` | 404 | Company UUID does not exist or not active |
-| `UNAUTHORIZED` | 403 | Authenticated user does not own this company |
+Endpoint: `GET /api/v1/dashboard/company/jobs/<job_id>/details/`
 
----
+Usage: Company opens a single job to view eligibility rules, task gate, applicants summary, and current status.
 
-### GET `company/jobs/<job_id>/details/`
+Request body: none.
 
-Get full details for a single job.
-
-**Success response:** Same shape as the job object in the list endpoint above.
-
----
-
-### PATCH `company/jobs/<job_id>/update/`
-
-Partially update a job. Send only the fields to change.
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `JOB_NOT_FOUND` | 404 | Job not found or deleted |
-| `UNAUTHORIZED` | 403 | Job does not belong to this company |
-
----
-
-### DELETE `company/jobs/<job_id>/delete/`
-
-Soft-delete a job (`is_deleted = True`).
-
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Job deleted successfully"] },
+  "message": {
+    "general": ["Job details fetched successfully"]
+  },
   "response": {
-    "job_id": "uuid",
-    "status": "Deleted"
+    "id": "job-uuid",
+    "title": "Backend Engineering Intern",
+    "job_type": "Internship",
+    "status": "Active",
+    "requires_task_completion": true,
+    "linked_task_info": {
+      "id": "task-uuid",
+      "title": "Build a REST API",
+      "hashtag": "#django-api"
+    },
+    "rules": [
+      {
+        "id": "rule-uuid",
+        "rule_type": "skill",
+        "rule_type_id": "skill-uuid",
+        "rule_name": "Django"
+      }
+    ],
+    "application_summary": {
+      "applied": 22,
+      "shortlisted": 7,
+      "accepted": 2,
+      "rejected": 4,
+      "withdrawn": 1
+    }
   }
 }
 ```
 
----
+## 6. Update Job
 
-## 4. Job Rules
+Endpoint: `PATCH /api/v1/dashboard/company/jobs/<job_id>/`
 
-Rules define eligibility requirements (skill, interest group, or achievement).
+Usage: Company updates an active job, closes applications, changes eligibility, or edits job details.
 
-### POST `company/jobs/<job_id>/rules/create/`
-
-Add a rule to a job.
-
-**Request body:**
+Request body:
 
 ```json
 {
-  "rule_type": "skill",
-  "rule_type_id": "skill-uuid"
+  "status": "Closed",
+  "job_description": "Applications are closed. Shortlisted candidates will be contacted.",
+  "min_karma": 1200
 }
 ```
 
-`rule_type` choices: `skill`, `interest_group`, `achievement`
-
----
-
-### PATCH `company/jobs/<job_id>/rules/<rule_id>/update/`
-
-Update an existing rule.
-
----
-
-### DELETE `company/jobs/<job_id>/rules/<rule_id>/delete/`
-
-Delete a rule from a job.
-
----
-
-## 5. Applications (Company View)
-
-### GET `company/jobs/<job_id>/applicants/`
-
-List all applicants for a specific job.
-
-**Query params:** `search`, `sortBy`, `page`, `perPage`
-
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Applicants fetched successfully"] },
+  "message": {
+    "general": ["Job updated successfully"]
+  },
+  "response": {
+    "job_id": "job-uuid",
+    "status": "Closed",
+    "updated_at": "2026-05-28T09:45:00+05:30"
+  }
+}
+```
+
+## 7. Job Analytics
+
+Endpoint: `GET /api/v1/dashboard/company/jobs/<job_id>/analytics/`
+
+Usage: Company reviews the hiring funnel for one job: views, unique views, applications, shortlist count, hires, and conversion rates.
+
+Query params:
+
+| Param | Type | Required | Notes |
+|---|---|---:|---|
+| `period` | string | No | `7d`, `30d`, `90d`, `all`; default `30d`. |
+
+Request body: none.
+
+Response body:
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": {
+    "general": ["Job analytics fetched successfully"]
+  },
   "response": {
     "job": {
       "id": "job-uuid",
-      "title": "Backend Engineer"
+      "title": "Backend Engineering Intern",
+      "status": "Active"
+    },
+    "funnel": {
+      "views": 320,
+      "unique_views": 210,
+      "applications": 45,
+      "shortlisted": 12,
+      "accepted": 3,
+      "rejected": 8,
+      "withdrawn": 2
+    },
+    "conversion": {
+      "view_to_apply_rate": 14.06,
+      "apply_to_shortlist_rate": 26.67,
+      "apply_to_hire_rate": 6.67
+    },
+    "trend": [
+      {
+        "date": "2026-05-21",
+        "views": 42,
+        "applications": 5
+      }
+    ]
+  }
+}
+```
+
+## 8. Public Job View Tracking
+
+Endpoint: `POST /api/v1/public/jobs/<job_id>/view/`
+
+Usage: Called by the public job detail page when a learner opens the page. The backend should deduplicate repeated views from the same user/session within a short time window.
+
+Authentication: optional. If authenticated, associate view with user. If anonymous, associate with session ID or fingerprint.
+
+Request body:
+
+```json
+{
+  "source": "public_jobs",
+  "referrer": "landing_page",
+  "session_id": "session-abc-123",
+  "device_type": "mobile"
+}
+```
+
+Response body:
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": {
+    "general": ["Job view tracked successfully"]
+  },
+  "response": {
+    "job_id": "job-uuid",
+    "counted": true,
+    "view_id": "view-uuid"
+  }
+}
+```
+
+## 9. Job Applications
+
+Endpoint: `GET /api/v1/dashboard/company/jobs/<job_id>/applications/`
+
+Usage: Company reviews candidates who applied to one job.
+
+Query params:
+
+| Param | Type | Required | Notes |
+|---|---|---:|---|
+| `status` | string | No | `applied`, `shortlisted`, `accepted`, `rejected`, `withdrawn`. |
+| `search` | string | No | Search by learner name or muID. |
+| `pageIndex` | integer | No | Page number. |
+| `perPage` | integer | No | Items per page. |
+
+Request body: none.
+
+Response body:
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": {
+    "general": ["Applications fetched successfully"]
+  },
+  "response": {
+    "job": {
+      "id": "job-uuid",
+      "title": "Backend Engineering Intern"
     },
     "applicants": [
       {
         "id": "application-uuid",
         "status": "applied",
-        "cover_note": "I'm excited about this opportunity...",
+        "cover_note": "I completed the Django PoW challenge.",
         "applicant_id": "user-uuid",
         "full_name": "Riya Sharma",
         "muid": "riya-sharma@mulearn",
@@ -601,461 +558,89 @@ List all applicants for a specific job.
           "name": "Explorer",
           "level_order": 4
         },
-        "reviewed_by_id": null,
-        "reviewed_at": null,
-        "created_at": "2026-05-10T10:00:00+05:30",
-        "updated_at": "2026-05-10T10:00:00+05:30"
+        "created_at": "2026-05-26T12:00:00+05:30"
       }
     ],
-    "pagination": { "count": 1, "totalPages": 1, "isNext": false, "isPrev": false }
+    "pagination": {
+      "count": 45,
+      "totalPages": 3,
+      "isNext": true,
+      "isPrev": false
+    }
   }
 }
 ```
 
----
+Endpoint: `PATCH /api/v1/dashboard/company/jobs/<job_id>/applications/<app_id>/`
 
-### PATCH `company/jobs/<job_id>/applicants/<application_id>/status/`
+Usage: Company moves an application through the hiring workflow.
 
-Update the status of an application.
-
-**FSM (allowed transitions):**
-
-```
-applied → shortlisted | rejected
-shortlisted → accepted | rejected
-accepted, rejected, withdrawn → (terminal, no further transitions)
-```
-
-**Request body:**
+Request body:
 
 ```json
 {
-  "status": "shortlisted"
+  "status": "shortlisted",
+  "review_note": "Strong PoW submission and relevant project work."
 }
 ```
 
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Application shortlisted successfully"] },
+  "message": {
+    "general": ["Application shortlisted successfully"]
+  },
   "response": {
-    "application_id": "uuid",
+    "application_id": "application-uuid",
     "applicant_id": "user-uuid",
     "new_status": "shortlisted",
     "reviewed_by": "company-user-uuid",
-    "reviewed_at": "2026-05-27T10:00:00+05:30"
+    "reviewed_at": "2026-05-28T10:00:00+05:30"
   }
 }
 ```
 
-**Error codes:**
+## 10. Learner Discovery With Skill Filter
 
-| Code | HTTP | Description |
-|------|------|-------------|
-| `INVALID_STATUS_TRANSITION` | 400 | FSM violation (e.g., accepted → shortlisted) |
-| `APPLICATION_NOT_FOUND` | 404 | Application not found for this job |
-| `TERMINAL_STATUS` | 400 | Attempting to move from a terminal state |
+Endpoint: `GET /api/v1/dashboard/company/learners/`
 
----
+Usage: Company discovers learners by karma, level, IG, achievement, skills, and work preference.
 
-## 6. Applications (Learner View)
+Query params:
 
-### GET `company/applications/`
+| Param | Type | Required | Notes |
+|---|---|---:|---|
+| `search` | string | No | Search by name, muID, or district. |
+| `karma_min` | integer | No | Minimum karma. |
+| `karma_max` | integer | No | Maximum karma. |
+| `level_order_min` | integer | No | Minimum level order. |
+| `ig_ids` | string | No | Comma-separated IG IDs. |
+| `achievement_ids` | string | No | Comma-separated achievement IDs. |
+| `skill_ids` | string | No | Comma-separated skill IDs. |
+| `skill_match` | string | No | `any` or `all`; default `any`. |
+| `interested_in_work` | boolean | No | Only learners opted in for work. |
+| `interested_in_gig_work` | boolean | No | Only learners opted in for gig work. |
 
-Learner fetches their own applications across all companies.
+Request body: none.
 
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Applications fetched successfully"] },
-  "response": {
-    "applications": [
-      {
-        "id": "application-uuid",
-        "status": "shortlisted",
-        "cover_note": "I'm excited...",
-        "job_id": "job-uuid",
-        "job_title": "Backend Engineer",
-        "job_type": "Full-Time",
-        "company_name": "Acme Labs",
-        "company_id": "company-uuid",
-        "created_at": "2026-05-10T10:00:00+05:30",
-        "updated_at": "2026-05-15T10:00:00+05:30"
-      }
-    ],
-    "pagination": { "count": 1, "totalPages": 1, "isNext": false, "isPrev": false }
-  }
-}
-```
-
----
-
-### POST `company/jobs/<job_id>/apply/`
-
-Learner applies to a job.
-
-**Request body (optional):**
-
-```json
-{
-  "cover_note": "I believe my skills are a great match..."
-}
-```
-
-> **Task gate:** If the job has `requires_task_completion = true`, the learner must have a `KarmaActivityLog` entry with `appraiser_approved = true` for the linked task. Otherwise the request is rejected with `TASK_NOT_COMPLETED`.
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Application submitted successfully."] },
-  "response": {
-    "application_id": "uuid",
-    "job_id": "job-uuid",
-    "job_title": "Backend Engineer",
-    "status": "applied",
-    "applied_at": "2026-05-27T10:00:00+05:30"
-  }
-}
-```
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `JOB_NOT_FOUND` | 404 | Job does not exist or is deleted |
-| `JOB_NOT_ACTIVE` | 400 | Job is not in `Active` status |
-| `DUPLICATE_APPLICATION` | 409 | Learner already applied |
-| `TASK_NOT_COMPLETED` | 400 | Learner has not completed the required task |
-| `COMPANY_ROLE_NOT_ALLOWED` | 403 | Company users cannot apply |
-
----
-
-### PATCH `company/applications/<app_id>/withdraw/`
-
-Learner withdraws their own application.
-
-Only possible from `applied` or `shortlisted` status.
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Application withdrawn successfully."] },
-  "response": {
-    "application_id": "uuid",
-    "job_id": "job-uuid",
-    "new_status": "withdrawn"
-  }
-}
-```
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `APPLICATION_NOT_FOUND` | 404 | Application not found |
-| `INVALID_STATUS_TRANSITION` | 400 | Application is in a terminal state |
-| `COMPANY_ROLE_NOT_ALLOWED` | 403 | Company users cannot withdraw |
-
----
-
-## 7. Tasks
-
-Companies can submit tasks tied to an Interest Group (IG). Tasks go live only after admin approval.
-
-**Workflow:** `company submits → pending + active=False → admin approves → approved + active=True`
-
----
-
-### GET `company/tasks/`
-
-List all tasks submitted by the authenticated company.
-
-**Query params:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `approval_status` | string | Filter: `pending`, `approved`, `rejected` |
-| `search` | string | Filter by title or hashtag |
-| `page`, `perPage` | int | Pagination |
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Tasks fetched successfully."] },
-  "response": {
-    "tasks": [
-      {
-        "id": "task-uuid",
-        "title": "Build a REST API",
-        "hashtag": "#django-api",
-        "description": "Create a fully documented REST API using Django REST Framework.",
-        "karma": 200,
-        "approval_status": "pending",
-        "rejection_reason": null,
-        "ig_name": "Web Development",
-        "type_name": "Task",
-        "active": false,
-        "created_at": "2026-05-27T10:00:00+05:30",
-        "updated_at": "2026-05-27T10:00:00+05:30"
-      }
-    ],
-    "pagination": { "count": 1, "totalPages": 1, "isNext": false, "isPrev": false }
-  }
-}
-```
-
----
-
-### POST `company/tasks/submit/`
-
-Submit a new task for admin review.
-
-**Request body:**
-
-```json
-{
-  "title": "Build a REST API",
-  "hashtag": "#django-api",
-  "description": "Create a fully documented REST API using DRF.",
-  "karma": 200,
-  "ig_id": "ig-uuid",
-  "type_id": "task-type-uuid",
-  "channel_id": "channel-uuid",
-  "level_id": "level-uuid"
-}
-```
-
-Required: `title`, `hashtag`, `karma`, `ig_id`, `type_id`
-
-> `hashtag` must start with `#` and must be unique across all tasks.  
-> `ig_id` must reference an existing Interest Group.  
-> `karma` must be ≥ 1.
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Task submitted for admin review."] },
-  "response": {
-    "id": "task-uuid",
-    "title": "Build a REST API",
-    "hashtag": "#django-api",
-    "karma": 200,
-    "approval_status": "pending",
-    "rejection_reason": null,
-    "ig_name": "Web Development",
-    "type_name": "Task",
-    "active": false,
-    "created_at": "2026-05-27T10:00:00+05:30",
-    "updated_at": "2026-05-27T10:00:00+05:30"
-  }
-}
-```
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `VALIDATION_ERROR` | 400 | Missing required fields or invalid values |
-| `NO_ACTIVE_COMPANY` | 403 | User has no active company |
-
----
-
-### POST `company/tasks/<task_id>/resubmit/`
-
-Reset a previously rejected task back to pending.
-
-> Does **not** create a new row — resets the existing record.
-
-**Request body:** None required.
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Task resubmitted for admin review."] },
-  "response": {
-    "id": "task-uuid",
-    "title": "Build a REST API",
-    "approval_status": "pending",
-    "rejection_reason": null,
-    "active": false,
-    "updated_at": "2026-05-27T11:00:00+05:30"
-  }
-}
-```
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `TASK_NOT_FOUND` | 404 | Task not found or not owned by this company |
-| `INVALID_STATUS_TRANSITION` | 400 | Task is not in `rejected` status |
-
----
-
-## 8. Members
-
-Companies can build a roster of muLearn users as employees or mentors.
-
----
-
-### GET `company/members/`
-
-List all active members of the authenticated company.
-
-**Query params:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `role` | string | Filter: `employee` or `mentor` |
-| `search` | string | Filter by name or muid |
-| `page`, `perPage` | int | Pagination |
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Members fetched successfully."] },
-  "response": {
-    "members": [
-      {
-        "id": "link-uuid",
-        "user_id": "user-uuid",
-        "full_name": "Arjun Dev",
-        "muid": "arjun-dev@mulearn",
-        "district": "Ernakulam",
-        "karma": 4200,
-        "level": {
-          "id": "level-uuid",
-          "name": "Navigator",
-          "level_order": 5
-        },
-        "interest_groups": [
-          { "id": "ig-uuid", "name": "Web Development" },
-          { "id": "ig-uuid", "name": "Cloud Computing" }
-        ],
-        "role": "mentor",
-        "status": "active",
-        "created_at": "2026-05-10T10:00:00+05:30"
-      }
-    ],
-    "pagination": { "count": 1, "totalPages": 1, "isNext": false, "isPrev": false }
-  }
-}
-```
-
----
-
-### POST `company/members/add/`
-
-Add a muLearn user to the company roster.
-
-> Users with the `Company` role cannot be added as members.  
-> If a previously removed member is re-added, their link is reactivated instead of creating a duplicate.
-
-**Request body:**
-
-```json
-{
-  "user_id": "user-uuid",
-  "role": "mentor"
-}
-```
-
-`role` choices: `employee`, `mentor`
-
-**Success response:** Member object (same as in the list response above).
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `VALIDATION_ERROR` | 400 | Missing fields or invalid role |
-| `USER_NOT_FOUND` | 404 | Target user does not exist |
-| `COMPANY_ROLE_NOT_ALLOWED` | 400 | Cannot add a company admin as member |
-| `DUPLICATE_MEMBER` | 409 | User is already an active member |
-
----
-
-### DELETE `company/members/<link_id>/remove/`
-
-Soft-remove a member from the company (`status → removed`).
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Member removed successfully."] },
-  "response": {
-    "link_id": "link-uuid",
-    "status": "removed"
-  }
-}
-```
-
-**Error codes:**
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `MEMBER_NOT_FOUND` | 404 | Link not found for this company |
-| `ALREADY_REMOVED` | 400 | Member already removed |
-
----
-
-## 9. Learner Discovery
-
-### GET `company/learners/`
-
-Search and filter muLearn learners for talent discovery.
-
-**Query params:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `search` | string | Filter by name, muid, email |
-| `ig` | string | Filter by interest group name |
-| `min_karma` | int | Minimum karma threshold |
-| `sortBy` | string | Sort field |
-| `page`, `perPage` | int | Pagination |
-
-**Success response:**
-
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Learners fetched successfully"] },
+  "message": {
+    "general": ["Learners fetched successfully"]
+  },
   "response": {
     "learners": [
       {
         "id": "user-uuid",
         "full_name": "Riya Sharma",
         "muid": "riya-sharma@mulearn",
-        "email": "riya@example.com",
         "district": "Thrissur",
         "karma": 3200,
         "level": {
@@ -1064,182 +649,397 @@ Search and filter muLearn learners for talent discovery.
           "level_order": 4
         },
         "interest_groups": [
-          { "id": "ig-uuid", "name": "Machine Learning" }
-        ]
+          {
+            "id": "ig-uuid",
+            "name": "Web Development"
+          }
+        ],
+        "skills": [
+          {
+            "id": "skill-uuid",
+            "name": "Django"
+          }
+        ],
+        "badges": [
+          {
+            "id": "achievement-uuid",
+            "title": "API Builder"
+          }
+        ],
+        "interested_in_work": true,
+        "interested_in_gig_work": true
       }
     ],
-    "pagination": { "count": 50, "totalPages": 5, "isNext": true, "isPrev": false }
+    "pagination": {
+      "count": 50,
+      "totalPages": 5,
+      "isNext": true,
+      "isPrev": false
+    }
   }
 }
 ```
 
----
+## 11. Shortlist Learner
 
-## 10. Analytics
+Endpoint: `POST /api/v1/dashboard/company/learners/<user_id>/shortlist/`
 
-### GET `company/home-summary/`
+Usage: Company saves a learner for follow-up. The shortlist may optionally be linked to a specific job.
 
-Returns a summary dashboard for the authenticated company.
+Request body:
 
-**Success response:**
+```json
+{
+  "job_id": "job-uuid",
+  "note": "Strong backend profile and completed Django task.",
+  "tags": ["backend", "django", "high-karma"]
+}
+```
+
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Dashboard summary fetched successfully"] },
+  "message": {
+    "general": ["Learner shortlisted successfully"]
+  },
   "response": {
-    "company": {
-      "id": "company-uuid",
-      "name": "Acme Labs",
-      "status": "active"
+    "shortlist_id": "shortlist-uuid",
+    "learner": {
+      "id": "user-uuid",
+      "full_name": "Riya Sharma",
+      "muid": "riya-sharma@mulearn"
     },
-    "stats": {
-      "total_jobs": 5,
-      "active_jobs": 3,
-      "total_applications": 42,
-      "pending_applications": 18,
-      "total_views": 0
-    }
+    "job_id": "job-uuid",
+    "status": "active",
+    "created_at": "2026-05-28T10:05:00+05:30"
   }
 }
 ```
 
----
+## 12. Shortlist List
 
-### GET `company/talent-pool/analytics/`
+Endpoint: `GET /api/v1/dashboard/company/shortlists/`
 
-Returns analytics on the talent pool (learner distribution).
+Usage: Company views saved learners, filters by job or status, and tracks follow-up state.
 
-**Query params:**
+Query params:
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `period` | string | `7d`, `30d` (default), `90d`, `1y` |
+| Param | Type | Required | Notes |
+|---|---|---:|---|
+| `job_id` | string | No | Filter shortlisted learners for a job. |
+| `status` | string | No | `active`, `contacted`, `archived`. |
+| `search` | string | No | Search learner name or muID. |
 
-**Success response:**
+Request body: none.
+
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Talent pool analytics fetched successfully"] },
+  "message": {
+    "general": ["Shortlists fetched successfully"]
+  },
   "response": {
-    "period_days": 30,
-    "talent_pool": {
-      "total_learners": 1240,
-      "active_learners": 380,
-      "avg_karma": 2150,
-      "district_distribution": [
-        { "district": "Ernakulam", "count": 210 },
-        { "district": "Thrissur", "count": 185 }
-      ],
-      "level_distribution": [
-        { "level": "Navigator", "count": 300 },
-        { "level": "Explorer", "count": 280 }
-      ],
-      "ig_distribution": [
-        { "ig": "Web Development", "count": 420 },
-        { "ig": "Machine Learning", "count": 310 }
-      ]
+    "shortlists": [
+      {
+        "id": "shortlist-uuid",
+        "status": "active",
+        "note": "Strong backend profile.",
+        "tags": ["backend", "django"],
+        "learner": {
+          "id": "user-uuid",
+          "full_name": "Riya Sharma",
+          "muid": "riya-sharma@mulearn",
+          "karma": 3200,
+          "level_order": 4
+        },
+        "job": {
+          "id": "job-uuid",
+          "title": "Backend Engineering Intern"
+        },
+        "created_at": "2026-05-28T10:05:00+05:30"
+      }
+    ],
+    "pagination": {
+      "count": 12,
+      "totalPages": 1,
+      "isNext": false,
+      "isPrev": false
     }
   }
 }
 ```
 
----
+## 13. Company Task List
 
-## 11. Admin Task Approval
+Endpoint: `GET /api/v1/dashboard/company/tasks/`
 
-> **Admin only.** Requires the `Admin` role.
+Usage: Company tracks submitted PoW tasks and admin approval status.
 
----
+Query params:
 
-### GET `dashboard/task/pending/`
+| Param | Type | Required | Notes |
+|---|---|---:|---|
+| `approval_status` | string | No | `pending`, `approved`, `rejected`. |
+| `search` | string | No | Search by title or hashtag. |
 
-List all tasks with `approval_status = pending` (company-submitted tasks awaiting review).
+Request body: none.
 
-**Query params:** `search`, `sortBy`, `page`, `perPage`
-
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Pending tasks fetched successfully."] },
+  "message": {
+    "general": ["Tasks fetched successfully"]
+  },
   "response": {
     "tasks": [
       {
         "id": "task-uuid",
         "title": "Build a REST API",
         "hashtag": "#django-api",
-        "description": "Create a fully documented REST API...",
         "karma": 200,
         "approval_status": "pending",
-        "ig": { "id": "ig-uuid", "name": "Web Development" },
-        "type": { "id": "type-uuid", "title": "Task" },
-        "submitted_by_company": {
-          "id": "company-uuid",
-          "name": "Acme Labs"
-        },
-        "created_at": "2026-05-27T10:00:00+05:30"
+        "rejection_reason": null,
+        "ig_name": "Web Development",
+        "active": false,
+        "created_at": "2026-05-28T10:10:00+05:30"
       }
     ],
-    "pagination": { "count": 3, "totalPages": 1, "isNext": false, "isPrev": false }
+    "pagination": {
+      "count": 2,
+      "totalPages": 1,
+      "isNext": false,
+      "isPrev": false
+    }
   }
 }
 ```
 
----
+Endpoint: `POST /api/v1/dashboard/company/tasks/submit/`
 
-### PATCH `dashboard/task/<task_id>/review/`
+Usage: Company submits a challenge/PoW task to be reviewed by admins before it becomes available to learners.
 
-Approve or reject a pending task.
-
-**Request body — Approve:**
+Request body:
 
 ```json
 {
-  "action": "approve"
+  "title": "Build a REST API",
+  "hashtag": "#django-api",
+  "description": "Create a documented Django REST API with authentication and tests.",
+  "karma": 200,
+  "ig_id": "ig-uuid",
+  "type_id": "task-type-uuid",
+  "channel_id": "channel-uuid",
+  "level_id": "level-uuid",
+  "skill_ids": ["skill-uuid-1", "skill-uuid-2"]
 }
 ```
 
-**Request body — Reject:**
-
-```json
-{
-  "action": "reject",
-  "reason": "Task description is too vague. Please add clear acceptance criteria."
-}
-```
-
-**Success response:**
+Response body:
 
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Task approved and is now live."] },
+  "message": {
+    "general": ["Task submitted for admin review"]
+  },
   "response": {
-    "task_id": "task-uuid",
-    "approval_status": "approved",
-    "active": true,
-    "rejection_reason": null,
-    "reviewed_by": "admin-user-uuid",
-    "reviewed_at": "2026-05-27T11:00:00+05:30"
+    "id": "task-uuid",
+    "title": "Build a REST API",
+    "hashtag": "#django-api",
+    "approval_status": "pending",
+    "active": false
   }
 }
 ```
 
-**Error codes:**
+## 14. Company Badges
 
-| Code | HTTP | Description |
-|------|------|-------------|
-| `INVALID_ACTION` | 400 | Action must be `approve` or `reject` |
-| `TASK_NOT_FOUND` | 404 | Task does not exist |
-| `INVALID_STATUS_TRANSITION` | 400 | Task is not in `pending` status |
-| `REASON_REQUIRED` | 400 | `reason` missing on reject action |
+Endpoint: `GET /api/v1/dashboard/company/badges/`
 
----
+Usage: Company views reputation badges earned through verification, hiring activity, mentoring, events, and PoW contributions.
+
+Request body: none.
+
+Response body:
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": {
+    "general": ["Company badges fetched successfully"]
+  },
+  "response": {
+    "badges": [
+      {
+        "id": "badge-verified-company",
+        "title": "Verified Company",
+        "description": "Company profile has been verified by muLearn.",
+        "status": "earned",
+        "earned_at": "2026-05-20T10:00:00+05:30"
+      },
+      {
+        "id": "badge-active-hirer",
+        "title": "Active Hirer",
+        "description": "Posted at least 3 active opportunities and reviewed applicants.",
+        "status": "in_progress",
+        "progress": {
+          "current": 2,
+          "target": 3
+        }
+      }
+    ]
+  }
+}
+```
+
+## 15. Engagement Score
+
+Endpoint: `GET /api/v1/dashboard/company/engagement-score/`
+
+Usage: Company sees a single health score based on jobs, tasks, reviews, hires, event collaborations, and learner engagement.
+
+Query params:
+
+| Param | Type | Required | Notes |
+|---|---|---:|---|
+| `period` | string | No | `30d`, `90d`, `all`; default `90d`. |
+
+Request body: none.
+
+Response body:
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": {
+    "general": ["Company engagement score fetched successfully"]
+  },
+  "response": {
+    "score": 78,
+    "grade": "good",
+    "period": "90d",
+    "components": [
+      {
+        "key": "job_activity",
+        "label": "Job activity",
+        "score": 22,
+        "max_score": 25
+      },
+      {
+        "key": "application_review",
+        "label": "Application review",
+        "score": 18,
+        "max_score": 25
+      },
+      {
+        "key": "community_contribution",
+        "label": "Community contribution",
+        "score": 20,
+        "max_score": 25
+      },
+      {
+        "key": "learner_outcomes",
+        "label": "Learner outcomes",
+        "score": 18,
+        "max_score": 25
+      }
+    ],
+    "recommended_actions": [
+      "Review 6 pending applications",
+      "Submit one PoW challenge for Web Development IG"
+    ]
+  }
+}
+```
+
+## 16. IG Collaboration Request
+
+Endpoint: `POST /api/v1/dashboard/company/ig-collaboration-requests/`
+
+Usage: Company requests collaboration with an Interest Group for a campaign, challenge, webinar, internship track, or hiring activity.
+
+Request body:
+
+```json
+{
+  "ig_id": "ig-uuid",
+  "title": "Backend API Challenge",
+  "description": "We want to run a Django challenge with the Web Development IG.",
+  "campaign_type": "challenge",
+  "expected_start_date": "2026-06-10",
+  "expected_end_date": "2026-06-25",
+  "target_learners": 100,
+  "contact_email": "partners@acme.example"
+}
+```
+
+Response body:
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": {
+    "general": ["IG collaboration request submitted successfully"]
+  },
+  "response": {
+    "request_id": "collaboration-request-uuid",
+    "status": "pending",
+    "ig_id": "ig-uuid",
+    "submitted_at": "2026-05-28T10:15:00+05:30"
+  }
+}
+```
+
+## 17. Company Event Request
+
+Endpoint: `POST /api/v1/dashboard/company/events/request/`
+
+Usage: Company requests to host or co-host an event with muLearn, a campus, or an Interest Group.
+
+Request body:
+
+```json
+{
+  "title": "Career Talk: Building Production APIs",
+  "description": "A technical career session for backend learners.",
+  "event_type": "webinar",
+  "preferred_date": "2026-06-20",
+  "target_audience": ["Web Development", "Backend"],
+  "mode": "online",
+  "speaker_name": "Jane Doe",
+  "speaker_designation": "Engineering Manager",
+  "contact_email": "events@acme.example"
+}
+```
+
+Response body:
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": {
+    "general": ["Event request submitted successfully"]
+  },
+  "response": {
+    "request_id": "event-request-uuid",
+    "status": "pending_review",
+    "title": "Career Talk: Building Production APIs",
+    "submitted_at": "2026-05-28T10:20:00+05:30"
+  }
+}
+```
 
