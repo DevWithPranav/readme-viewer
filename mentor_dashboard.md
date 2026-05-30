@@ -1,1771 +1,1001 @@
-# Mentor Dashboard API Documentation
+# Dashboard — Mentor API
 
-> **Base prefix**: `/api/v1/dashboard/mentor/`
-> **Auth**: All endpoints require a valid JWT (`Authorization: Bearer <token>`), unless marked **[Public — no auth]**.
-> **Roles**: `ADMIN` = platform admin · `MENTOR` = verified mentor
+**Base path:** `/api/v1/dashboard/mentor/`  
+**Source:** `api/dashboard/mentor/`  
+**OpenAPI tags:** `Dashboard - Mentor`, `Dashboard - Mentor Session`, `Dashboard - Mentor Availability`, `Dashboard - Mentor Session Participant`, `Dashboard - Learner Session`, `Dashboard - Mentor Public`
 
 ---
 
 ## Table of Contents
 
-1. [Onboarding](#1-onboarding)
-2. [Admin Mentor Roster](#2-admin-mentor-roster)
-3. [Overview & Stats](#3-overview--stats)
-4. [Leaderboard](#4-leaderboard)
-5. [Sessions](#5-sessions)
-6. [Global Session Approval Queue](#6-global-session-approval-queue)
-7. [Task Review Queue](#7-task-review-queue)
-8. [Availability Slots](#8-availability-slots)
-9. [Task Requests](#9-task-requests)
-10. [Opportunities](#10-opportunities)
-11. [Mentees & Activity Log](#11-mentees--activity-log)
-12. [Karma Award](#12-karma-award)
-13. [Session Reminder](#13-session-reminder)
-14. [My IGs](#14-my-igs)
-15. [IG Mentor Link Requests](#15-ig-mentor-link-requests)
-16. [Admin Mentor Tier Update](#16-admin-mentor-tier-update)
-17. [Bulk Attendance Update](#17-bulk-attendance-update)
-18. [Session Clone](#18-session-clone)
-19. [Availability Calendar](#19-availability-calendar)
-20. [Public Endpoints](#20-public-endpoints)
-21. [Company Mentor](#21-company-mentor)
-22. [Campus Mentor](#22-campus-mentor)
+| # | Endpoint | Method(s) | Auth / Role |
+|---|----------|-----------|-------------|
+| 1 | [`register/`](#1-register) | `POST`, `PATCH` | Authenticated user |
+| 2 | [`status/`](#2-status) | `GET` | Authenticated user |
+| 3 | [`profile/`](#3-profile) | `GET`, `PATCH` | Mentor (approved) |
+| 4 | [`list/`](#4-list) | `GET` | Admin |
+| 5 | [`detail/<mentor_id>/`](#5-detailmentor_id) | `GET` | Admin |
+| 6 | [`verify/<mentor_id>/`](#6-verifymentor_id) | `PATCH` | Admin |
+| 7 | [`public/profile/<mentor_id>/`](#7-publicprofilementor_id) | `GET` | Authenticated user |
+| 8 | [`public/availability/<mentor_id>/`](#8-publicavailabilitymentor_id) | `GET` | Authenticated user |
+| 9 | [`availability/`](#9-availability) | `GET`, `POST` | Mentor |
+| 10 | [`availability/<slot_id>/`](#10-availabilityslot_id) | `GET`, `PATCH`, `DELETE` | Mentor |
+| 11 | [`session/create/`](#11-sessioncreate) | `POST` | Mentor |
+| 12 | [`session/list/`](#12-sessionlist) | `GET` | Mentor |
+| 13 | [`session/list/<session_id>/`](#13-sessionlistsession_id) | `GET` | Mentor |
+| 14 | [`session/update/<session_id>/`](#14-sessionupdatesession_id) | `PATCH`, `DELETE` | Mentor |
+| 15 | [`session/available/`](#15-sessionavailable) | `GET` | Authenticated user (learner) |
+| 16 | [`session/admin/list/`](#16-sessionadminlist) | `GET` | Admin |
+| 17 | [`session/admin/verify/<session_id>/`](#17-sessionadminverifysession_id) | `PATCH` | Admin |
+| 18 | [`session/participation/join/<session_id>/`](#18-sessionparticipationjoinsession_id) | `POST` | Authenticated user |
+| 19 | [`session/participant/history/`](#19-sessionparticipanthistory) | `GET` | Authenticated user |
+| 20 | [`session/participant/list/<session_id>/`](#20-sessionparticipantlistsession_id) | `GET` | Mentor |
+| 21 | [`session/participant/update/<link_id>/`](#21-sessionparticipantupdatelink_id) | `PATCH` | Mentor |
+| 22 | [`session/participant/feedback/<session_id>/`](#22-sessionparticipantfeedbacksession_id) | `PATCH` | Authenticated user (participant) |
 
 ---
 
-## Mentor Tier Reference
+## Overview
 
-| `mentor_tier` value | Description | `org_id` |
-|---|---|---|
-| `IG_MENTOR` | Linked to specific Interest Group(s) | `null` |
-| `MENTOR` | Platform-wide global mentor | `null` |
-| `COMPANY_MENTOR` | Scoped to a specific Company org | Company UUID |
-| `CAMPUS_MENTOR` | Scoped to a specific College org | College UUID |
+### Response envelope
 
-> A user may hold **multiple** `UserMentor` rows — one per (tier, org) combination.
-> System role (`"Mentor"`) is the same for all tiers; tier-specific access is enforced by `mentor_tier + org_id` inside each endpoint.
+**Success:**
 
----
-
-## 1. Onboarding
-
-### `GET /mentor/onboarding/`
-
-Fetch the authenticated user's mentor application.
-
-| | |
-|---|---|
-| **Roles** | Any authenticated user |
-| **Auth** | JWT required |
-
-**Response — 200 OK**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Success",
+  "message": { "general": ["Human-readable success message"] },
+  "response": {}
+}
+```
+
+**Failure:**
+
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": {
+    "general": ["Error summary"],
+    "field_name": ["Validation detail"]
+  },
+  "response": {}
+}
+```
+
+### Authentication
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Required on all endpoints in this module (including public profile/availability routes).
+
+### Pagination & search
+
+| Query param | Default | Description |
+|-------------|---------|-------------|
+| `pageIndex` | `1` | Page number |
+| `perPage` | `10` | Items per page |
+| `search` | — | Case-insensitive search (fields vary) |
+| `sortBy` | — | Sort key; prefix `-` for descending |
+
+**Paginated response:**
+
+```json
+{
   "response": {
-    "mentor": {
-      "id": "um-uuid-001",
-      "full_name": "Arjun Nair",
-      "email": "arjun@example.com",
-      "muid": "arjun@mulearn",
-      "about": "Passionate about open-source and teaching.",
-      "expertise": ["Python", "Django", "REST APIs"],
-      "reason": "I want to help junior devs grow.",
-      "preferred_ig_ids": ["ig-uuid-001", "ig-uuid-002"],
-      "mentor_tier": "IG_MENTOR",
-      "is_verified": true,
-      "verified_at": "2025-01-15T10:30:00Z",
-      "verification_note": "Strong background verified.",
-      "hours": 12,
-      "created_at": "2025-01-01T08:00:00Z"
+    "data": [],
+    "pagination": {
+      "count": 10,
+      "totalPages": 1,
+      "isNext": false,
+      "isPrev": false,
+      "nextPage": null
     }
+  }
+}
+```
+
+### Mentor application lifecycle
+
+| `status` | Meaning |
+|----------|---------|
+| `PENDING` | Awaiting admin review |
+| `APPROVED` | Mentor role assigned; profile & session APIs available |
+| `REJECTED` | Rejected; PATCH `register/` to resubmit |
+
+**Mentor tiers:** `IG_MENTOR`, `MENTOR`, `COMPANY_MENTOR`, `CAMPUS_MENTOR` (default on register: `IG_MENTOR`)
+
+### Session lifecycle
+
+| `status` | Meaning |
+|----------|---------|
+| `PENDING_APPROVAL` | Created by mentor; awaiting admin |
+| `SCHEDULED` | Approved; learners can join |
+| `COMPLETED` | Finished |
+| `CANCELLED` | Cancelled |
+| `REJECTED` | Rejected by admin |
+
+Editing a `SCHEDULED` session resets status to `PENDING_APPROVAL`.
+
+---
+
+## 1. `register/`
+
+**`POST /api/v1/dashboard/mentor/register/`**
+
+Submit a mentor application for the authenticated user.
+
+**Roles:** Authenticated user (one application per user)
+
+**Request body:**
+
+```json
+{
+  "about": "Software engineer with 8 years of experience mentoring students.",
+  "expertise": "Python, Django, system design, career guidance",
+  "reason": "I want to give back to the muLearn community.",
+  "hours": 5,
+  "preferred_ig_ids": [
+    "ig-uuid-web-dev",
+    "ig-uuid-cloud"
+  ]
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `about` | No | Max 1000 chars |
+| `expertise` | No | Free text |
+| `reason` | No | Max 1000 chars |
+| `hours` | No | Weekly hours (integer, default 0) |
+| `preferred_ig_ids` | Yes | Non-empty array of valid Interest Group UUIDs |
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Mentor registration submitted successfully."] },
+  "response": {
+    "about": "Software engineer with 8 years of experience mentoring students.",
+    "expertise": "Python, Django, system design, career guidance",
+    "reason": "I want to give back to the muLearn community.",
+    "hours": 5,
+    "preferred_ig_ids": ["ig-uuid-web-dev", "ig-uuid-cloud"]
+  }
+}
+```
+
+**Error:** Mentor request already exists for this account.
+
+---
+
+**`PATCH /api/v1/dashboard/mentor/register/`**
+
+Update a pending or rejected application. Rejected applications are resubmitted as `PENDING` with `verification_note` cleared.
+
+**Request body:** Same fields as POST (partial update).
+
+**Success response:** Updated application fields.
+
+**Errors:** No application found; already `APPROVED` (use `profile/`).
+
+---
+
+## 2. `status/`
+
+**`GET /api/v1/dashboard/mentor/status/`**
+
+Check mentor application status.
+
+**Request body:** None
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Success"] },
+  "response": {
+    "status": "PENDING",
+    "verification_note": null,
+    "mentor_id": "mentor-uuid"
   }
 }
 ```
 
 ---
 
-### `POST /mentor/onboarding/`
+## 3. `profile/`
 
-Submit a mentor application.
+**`GET /api/v1/dashboard/mentor/profile/`**
 
-**Request Body**
+Full mentor profile for an approved mentor.
+
+**Roles:** `Mentor` with `status = APPROVED`
+
+**Success response:**
+
 ```json
 {
-  "about": "Senior software engineer with 5 years in web development.",
-  "expertise": ["JavaScript", "React", "Node.js"],
-  "reason": "I want to mentor students on modern web development.",
-  "preferred_ig_ids": ["ig-uuid-001", "ig-uuid-003"]
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Success"] },
+  "response": {
+    "id": "mentor-uuid",
+    "user": "user-uuid",
+    "user_full_name": "Arjun Menon",
+    "user_email": "arjun@example.com",
+    "about": "Software engineer with 8 years of experience.",
+    "expertise": "Python, Django",
+    "reason": "Giving back to the community.",
+    "hours": 5,
+    "mentor_tier": "IG_MENTOR",
+    "status": "APPROVED",
+    "preferred_ig_ids": ["ig-uuid-web-dev"],
+    "org": null,
+    "verified_by": "admin-uuid",
+    "verified_at": "2026-02-01T10:00:00Z",
+    "verification_note": null,
+    "created_by": "user-uuid",
+    "updated_by": "user-uuid",
+    "created_at": "2026-01-15T10:00:00Z",
+    "updated_at": "2026-05-01T10:00:00Z"
+  }
 }
 ```
 
 ---
 
-### `PATCH /mentor/onboarding/`
+**`PATCH /api/v1/dashboard/mentor/profile/`**
 
-Update own mentor profile fields.
+Update approved mentor profile.
 
-**Request Body** *(all fields optional)*
+**Request example:**
+
 ```json
 {
   "about": "Updated bio.",
-  "expertise": ["Python", "FastAPI", "Kubernetes"],
-  "preferred_ig_ids": ["ig-uuid-005"]
+  "hours": 8,
+  "preferred_ig_ids": ["ig-uuid-web-dev", "ig-uuid-ml"]
 }
 ```
 
----
-
-## 2. Admin Mentor Roster
-
-### `GET /mentor/list/`
-
-Paginated list of all mentor applications.
-
-| | |
-|---|---|
-| **Roles** | ADMIN |
-
-**Query Parameters**
-
-| Param | Type | Description |
-|---|---|---|
-| `is_verified` | boolean string | `true` / `false` |
-| `search` | string | Name, email, or muid |
-| `sort_by` | string | `full_name`, `created_at`, `mentor_tier` |
+**Success response:** Full mentor detail object (same shape as GET).
 
 ---
 
-### `PATCH /mentor/<mentor_id>/verify/`
+## 4. `list/`
 
-Approve or reject a pending mentor application.
+**`GET /api/v1/dashboard/mentor/list/`**
 
-**Request Body**
-```json
-{
-  "action": "approve",
-  "note": "Background verified. Welcome aboard!",
-  "mentor_tier": "IG_MENTOR"
-}
-```
+Admin list of all mentor applications.
 
-> `action`: `"approve"` | `"reject"`
-> `mentor_tier` (approve only): `"IG_MENTOR"` | `"MENTOR"`
+**Roles:** `Admin`
 
----
+**Query params:**
 
-## 3. Overview & Stats
+| Param | Description |
+|-------|-------------|
+| `status` | `PENDING`, `APPROVED`, `REJECTED` |
+| `mentor_tier` | `IG_MENTOR`, `MENTOR`, `COMPANY_MENTOR`, `CAMPUS_MENTOR` |
+| `pageIndex`, `perPage`, `search`, `sortBy` | Search `user__full_name`, `user__email`; sort `created_at`, `status`, `user_full_name` |
 
-### `GET /mentor/overview/`
-### `GET /mentor/stats/` *(alias)*
+**Success response:**
 
-Single-call dashboard snapshot. Admins see platform-wide data; mentors see their own scoped data.
-
-| | |
-|---|---|
-| **Roles** | ADMIN, MENTOR |
-
----
-
-## 4. Leaderboard
-
-### `GET /mentor/leaderboard/`
-
-Ranked list of verified mentors.
-**Score** = `(sessions_completed × 3) + (mentees_attended × 2) + (hours × 1)`
-
-| | |
-|---|---|
-| **Roles** | ADMIN, MENTOR |
-
----
-
-## 5. Sessions
-
-### `GET /mentor/sessions/`
-### `POST /mentor/sessions/`
-### `GET /mentor/sessions/<session_id>/`
-### `PATCH /mentor/sessions/<session_id>/`
-### `DELETE /mentor/sessions/<session_id>/`
-### `PATCH /mentor/sessions/<session_id>/status/`
-### `GET /mentor/sessions/<session_id>/participants/`
-### `POST /mentor/sessions/<session_id>/participants/`
-### `DELETE /mentor/sessions/<session_id>/participants/<user_id>/`
-
----
-
-## 6. Global Session Approval Queue
-
-### `GET /mentor/sessions/pending/`
-### `PATCH /mentor/sessions/<session_id>/approve/`
-
----
-
-## 7. Task Review Queue
-
-### `GET /mentor/review-queue/`
-### `GET /mentor/review-queue/<kal_id>/`
-### `PATCH /mentor/review-queue/<kal_id>/`
-
----
-
-## 8. Availability Slots
-
-### `GET /mentor/availability/`
-### `POST /mentor/availability/`
-### `PUT /mentor/availability/<slot_id>/`
-### `DELETE /mentor/availability/<slot_id>/`
-
----
-
-## 9. Task Requests
-
-### `GET /mentor/task-requests/`
-### `POST /mentor/task-requests/`
-### `GET /mentor/task-requests/<task_request_id>/`
-### `PATCH /mentor/task-requests/<task_request_id>/`
-### `DELETE /mentor/task-requests/<task_request_id>/`
-
----
-
-## 10. Opportunities
-
-### `GET /mentor/opportunities/`
-### `POST /mentor/opportunities/`
-### `GET /mentor/opportunities/<opportunity_id>/`
-### `PATCH /mentor/opportunities/<opportunity_id>/`
-### `DELETE /mentor/opportunities/<opportunity_id>/`
-
----
-
-## 11. Mentees & Activity Log
-
-### `GET /mentor/mentees/`
-### `GET /mentor/mentees/<user_id>/`
-### `GET /mentor/activity-log/`
-
----
-
-## 12. Karma Award
-
-### `GET /mentor/sessions/<session_id>/karma-award/`
-### `POST /mentor/sessions/<session_id>/karma-award/`
-
----
-
-## 13. Session Reminder
-
-### `POST /mentor/sessions/<session_id>/remind/`
-
----
-
-## 14. My IGs
-
-### `GET /mentor/my-igs/`
-
----
-
-## 15. IG Mentor Link Requests
-
-### `GET /mentor/ig-requests/`
-### `PATCH /mentor/ig-requests/<request_id>/`
-
----
-
-## 16. Admin Mentor Tier Update
-
-### `PATCH /mentor/list/<mentor_id>/tier/`
-
-| | |
-|---|---|
-| **Roles** | ADMIN only |
-
-**Request Body**
-```json
-{ "mentor_tier": "MENTOR" }
-```
-
-> `mentor_tier`: `"IG_MENTOR"` | `"MENTOR"` — note: `"COMPANY_MENTOR"` and `"CAMPUS_MENTOR"` tiers are managed through their own onboarding flows and cannot be set via this endpoint.
-
----
-
-## 17. Bulk Attendance Update
-
-### `PATCH /mentor/sessions/<session_id>/attendance/`
-
----
-
-## 18. Session Clone
-
-### `POST /mentor/sessions/<session_id>/clone/`
-
----
-
-## 19. Availability Calendar
-
-### `GET /mentor/availability/calendar/`
-
----
-
-## 20. Public Endpoints
-
-### `GET /mentor/<muid>/public/`
-### `GET /mentor/<muid>/public/sessions/`
-### `GET /mentor/availability/public/?mentor_muid=<muid>`
-
----
-
----
-
-# 21. Company Mentor
-
-> **Prefix**: `/api/v1/dashboard/mentor/company/`
->
-> Company mentors are users with a verified `UserMentor` row where `mentor_tier = "COMPANY_MENTOR"` and `org_id` points to a **Company-type** organisation.
->
-> **Tier enforcement**: Every write endpoint verifies that the requesting user has `is_verified=True` for the exact `(COMPANY_MENTOR, org_id)` combination. A company mentor cannot act on a different company's data, cannot use campus-mentor endpoints, and cannot act beyond their approved org scope.
-
----
-
-### `GET /mentor/company/onboarding/`
-
-List the authenticated user's own Company Mentor application rows.
-
-| | |
-|---|---|
-| **Roles** | Any authenticated user |
-| **Auth** | JWT required |
-
-**Response — 200 OK**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "response": {
-    "mentors": [
-      {
-        "id": "um-uuid-c01",
-        "full_name": "Rahul Dev",
-        "email": "rahul@acmecorp.com",
-        "muid": "rahul@mulearn",
-        "mentor_tier": "COMPANY_MENTOR",
-        "org_id": "org-uuid-acme",
-        "org_name": "Acme Corp",
-        "org_type": "Company",
-        "about": "10 years in backend engineering.",
-        "expertise": ["Go", "Kubernetes", "gRPC"],
-        "reason": "Want to hire and mentor the next generation.",
-        "is_verified": true,
-        "verified_at": "2026-05-20T11:00:00Z",
-        "verification_note": "Verified by admin.",
-        "hours": 5,
-        "created_at": "2026-05-10T09:00:00Z"
-      }
-    ]
-  }
-}
-```
-
----
-
-### `POST /mentor/company/onboarding/`
-
-Apply to become a Company Mentor for a specific organisation.
-
-| | |
-|---|---|
-| **Roles** | Any authenticated user |
-| **Auth** | JWT required |
-
-**Rules**
-- `org` must point to an existing organisation with `org_type = "Company"` — returns `400` otherwise
-- Only one application per `(user, COMPANY_MENTOR, org)` triple — duplicate returns `400`
-- Application starts as `is_verified = False`; an admin must approve it
-
-**Request Body**
-```json
-{
-  "org": "org-uuid-acme",
-  "about": "10 years in backend engineering at Acme Corp.",
-  "expertise": ["Go", "Kubernetes", "gRPC"],
-  "reason": "Want to hire and mentor the next generation of engineers."
-}
-```
-
-**Response — 201 Created**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Company mentor application submitted. Awaiting admin approval.",
-  "response": {
-    "mentor": {
-      "id": "um-uuid-c02",
-      "mentor_tier": "COMPANY_MENTOR",
-      "org_id": "org-uuid-acme",
-      "org_name": "Acme Corp",
-      "is_verified": false,
-      "created_at": "2026-05-27T10:00:00Z"
-    }
-  }
-}
-```
-
-**Error — Wrong org type (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "A valid Company organisation id is required."
-}
-```
-
-**Error — Duplicate (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "You have already applied as a company mentor for this organisation."
-}
-```
-
----
-
-### `PATCH /mentor/company/onboarding/<mentor_id>/`
-
-Update own Company Mentor profile (about / expertise / reason only).
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-| **Auth** | JWT required |
-
-**Tier enforcement**: Can only edit rows where `mentor_tier = "COMPANY_MENTOR"` and `user_id` matches the requester.
-
-**Request Body** *(all fields optional)*
-```json
-{
-  "about": "Updated: now leading the platform engineering team.",
-  "expertise": ["Go", "Kubernetes", "gRPC", "Terraform"]
-}
-```
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Profile updated."
-}
-```
-
----
-
-### `GET /mentor/company/list/`
-
-Admin: paginated list of all Company Mentor applications.
-
-| | |
-|---|---|
-| **Roles** | ADMIN |
-| **Auth** | JWT required |
-
-**Query Parameters**
-
-| Param | Type | Description |
-|---|---|---|
-| `org_id` | UUID | Filter by organisation |
-| `is_verified` | boolean string | `true` / `false` |
-| `search` | string | Name, email, or org name |
-| `sort_by` | string | `created_at`, `full_name` |
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "id": "um-uuid-c01",
-      "full_name": "Rahul Dev",
-      "email": "rahul@acmecorp.com",
-      "muid": "rahul@mulearn",
-      "mentor_tier": "COMPANY_MENTOR",
-      "org_id": "org-uuid-acme",
-      "org_name": "Acme Corp",
-      "org_type": "Company",
-      "is_verified": false,
-      "created_at": "2026-05-10T09:00:00Z"
-    }
-  ],
-  "pagination": { "count": 8, "totalPages": 1, "isNext": false, "isPrev": false }
-}
-```
-
----
-
-### `PATCH /mentor/company/<mentor_id>/verify/`
-
-Admin approves or rejects a Company Mentor application.
-
-| | |
-|---|---|
-| **Roles** | ADMIN |
-| **Auth** | JWT required |
-
-**On approve**: sets `is_verified = True`, assigns existing `"Mentor"` system role (idempotent), logs action.
-**On reject**: sets `is_verified = False`, logs action.
-
-**Request Body — Approve**
-```json
-{
-  "action": "approve",
-  "verification_note": "Identity and company affiliation verified."
-}
-```
-
-**Request Body — Reject**
-```json
-{
-  "action": "reject",
-  "verification_note": "Could not verify company affiliation."
-}
-```
-
-**Response — Approve (200 OK)**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Company mentor approved.",
-  "response": {
-    "mentor": {
-      "id": "um-uuid-c01",
-      "mentor_tier": "COMPANY_MENTOR",
-      "org_id": "org-uuid-acme",
-      "org_name": "Acme Corp",
-      "is_verified": true,
-      "verified_at": "2026-05-27T12:00:00Z"
-    }
-  }
-}
-```
-
-**Response — Reject (200 OK)**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Company mentor application rejected."
-}
-```
-
-**Error — Invalid action (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "action must be 'approve' or 'reject'."
-}
-```
-
----
-
-### `GET /mentor/company/sessions/`
-
-List sessions scoped to the requesting mentor's verified company orgs. Admins see all company-org sessions.
-
-| | |
-|---|---|
-| **Roles** | ADMIN, MENTOR |
-| **Auth** | JWT required |
-
-**Tier enforcement**: Non-admin mentors only see sessions whose `org_id` matches one of their `is_verified=True` + `COMPANY_MENTOR` rows.
-
-**Query Parameters**
-
-| Param | Type | Description |
-|---|---|---|
-| `search` | string | Filter by title or org name |
-| `sort_by` | string | `starts_at`, `title` |
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "id": "sess-uuid-c01",
-      "title": "System Design for Freshers",
-      "org_id": "org-uuid-acme",
-      "org_name": "Acme Corp",
-      "status": "SCHEDULED",
-      "mode": "ONLINE",
-      "starts_at": "2026-06-01T10:00:00Z",
-      "ends_at": "2026-06-01T12:00:00Z",
-      "meeting_link": "https://meet.google.com/acme-sysdesign",
-      "created_by_name": "Rahul Dev",
-      "created_at": "2026-05-27T10:00:00Z",
-      "participant_count": 12
-    }
-  ],
-  "pagination": { "count": 4, "totalPages": 1, "isNext": false, "isPrev": false }
-}
-```
-
----
-
-### `POST /mentor/company/sessions/`
-
-Create a session scoped to a specific company org.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-| **Auth** | JWT required |
-
-**Tier enforcement**: Requester must have `is_verified=True` for `(COMPANY_MENTOR, org)`.
-**Auto-status**: Org-scoped sessions are always `SCHEDULED` — no admin approval queue.
-
-**Request Body**
-```json
-{
-  "org": "org-uuid-acme",
-  "title": "System Design for Freshers",
-  "description": "Covers scalability, databases, and microservices.",
-  "mode": "ONLINE",
-  "starts_at": "2026-06-01T10:00:00Z",
-  "ends_at": "2026-06-01T12:00:00Z",
-  "meeting_link": "https://meet.google.com/acme-sysdesign",
-  "max_participants": 20
-}
-```
-
-> `ig` is optional — set it only if the session is also linked to a specific Interest Group.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Company session created.",
-  "response": {
-    "session": {
-      "id": "sess-uuid-c01",
-      "title": "System Design for Freshers",
-      "org_id": "org-uuid-acme",
-      "org_name": "Acme Corp",
-      "status": "SCHEDULED",
-      "is_global": false,
-      "starts_at": "2026-06-01T10:00:00Z",
-      "ends_at": "2026-06-01T12:00:00Z"
-    }
-  }
-}
-```
-
-**Error — Not a verified company mentor for this org (403)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "You are not a verified company mentor for this organisation."
-}
-```
-
----
-
-### `GET /mentor/company/sessions/<session_id>/`
-
-Retrieve full details of a single company-scoped session.
-
-| | |
-|---|---|
-| **Roles** | ADMIN, MENTOR |
-
-**Tier enforcement**: MENTOR must have a verified `COMPANY_MENTOR` row for the session's `org_id`.
-
----
-
-### `PATCH /mentor/company/sessions/<session_id>/`
-
-Update a company session. Only the session creator can update it.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Request Body** *(all fields optional)*
-```json
-{
-  "title": "System Design — Advanced Track",
-  "starts_at": "2026-06-02T10:00:00Z",
-  "ends_at": "2026-06-02T12:00:00Z"
-}
-```
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Session updated."
-}
-```
-
----
-
-### `DELETE /mentor/company/sessions/<session_id>/`
-
-Cancel (soft-delete) a company session.
-
-| | |
-|---|---|
-| **Roles** | ADMIN, MENTOR (creator only) |
-
-Sets `status = "CANCELLED"`.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Session cancelled."
-}
-```
-
----
-
-### `GET /mentor/company/opportunities/`
-
-List opportunities scoped to the mentor's company org(s).
-
-| | |
-|---|---|
-| **Roles** | ADMIN, MENTOR |
-
-**Tier enforcement**: MENTOR only sees opportunities for their verified company orgs.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "id": "opp-uuid-c01",
-      "org_id": "org-uuid-acme",
-      "org_name": "Acme Corp",
-      "ig_id": null,
-      "ig_name": null,
-      "type": "INTERNSHIP",
-      "title": "Backend Engineer Intern — Summer 2026",
-      "description": "3-month paid internship at Acme Corp.",
-      "eligibility": "Final year CS students only.",
-      "application_url": "https://acmecorp.com/intern/apply",
-      "starts_at": "2026-07-01T00:00:00Z",
-      "ends_at": "2026-09-30T00:00:00Z",
-      "status": "PUBLISHED",
-      "created_by_name": "Rahul Dev",
-      "created_at": "2026-05-20T10:00:00Z",
-      "updated_at": "2026-05-20T10:00:00Z"
-    }
-  ],
-  "pagination": { "count": 3, "totalPages": 1, "isNext": false, "isPrev": false }
-}
-```
-
----
-
-### `POST /mentor/company/opportunities/`
-
-Create a new company-scoped opportunity.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Requester must have `is_verified=True` for `(COMPANY_MENTOR, org)`.
-
-**Request Body**
-```json
-{
-  "org": "org-uuid-acme",
-  "type": "INTERNSHIP",
-  "title": "Backend Engineer Intern — Summer 2026",
-  "description": "3-month paid internship at Acme Corp.",
-  "eligibility": "Final year CS students only.",
-  "application_url": "https://acmecorp.com/intern/apply",
-  "starts_at": "2026-07-01T00:00:00Z",
-  "ends_at": "2026-09-30T00:00:00Z",
-  "status": "PUBLISHED"
-}
-```
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Company opportunity created.",
-  "response": { "opportunity": { "...": "full opportunity object" } }
-}
-```
-
----
-
-### `GET /mentor/company/opportunities/<opportunity_id>/`
-### `PATCH /mentor/company/opportunities/<opportunity_id>/`
-### `DELETE /mentor/company/opportunities/<opportunity_id>/`
-
-CRUD on a single company opportunity. `DELETE` sets `status = "ARCHIVED"`.
-
-| | |
-|---|---|
-| **Roles** | GET: ADMIN, MENTOR · PATCH: MENTOR (creator only) · DELETE: ADMIN, MENTOR (creator only) |
-| **Tier enforcement** | MENTOR must have verified `COMPANY_MENTOR` row for the opportunity's `org_id` |
-
----
-
-### `GET /mentor/company/mentees/`
-
-Distinct list of users who attended sessions in the mentor's company org(s).
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Only sessions belonging to the mentor's verified company orgs are considered.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "user_id": "user-uuid-050",
-      "user__full_name": "Riya Sharma",
-      "user__muid": "riya@mulearn",
-      "user__email": "riya@acmecorp.com",
-      "total_sessions": 3
-    }
-  ],
-  "pagination": { "count": 12, "totalPages": 2, "isNext": true, "isPrev": false }
-}
-```
-
-**Error — No verified company orgs (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "You have no verified company mentor scopes."
-}
-```
-
----
-
-### `GET /mentor/company/review-queue/`
-
-KarmaActivityLog entries **pending mentor review** for users in the mentor's company org(s).
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Only KAL entries submitted by users whose `UserOrganizationLink.org_id` is in the mentor's verified company org list.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "id": "kal-uuid-c01",
-      "user_name": "Riya Sharma",
-      "user_muid": "riya@mulearn",
-      "task_title": "Build a CI/CD Pipeline",
-      "task_hashtag": "#cicd",
-      "ig_name": null,
-      "karma": 600,
-      "mentor_review_status": "PENDING",
-      "created_at": "2026-05-26T08:00:00Z"
-    }
-  ],
-  "pagination": { "count": 5, "totalPages": 1, "isNext": false, "isPrev": false }
-}
-```
-
----
-
-### `GET /mentor/company/review-queue/<kal_id>/`
-
-Retrieve a single task submission entry.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: The submitting user must belong to one of the mentor's verified company orgs.
-
----
-
-### `PATCH /mentor/company/review-queue/<kal_id>/`
-
-Approve or reject a task submission.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Only entries from company org users can be reviewed; cross-org or campus reviews are blocked.
-
-**Request Body**
-```json
-{
-  "status": "APPROVED",
-  "feedback": "Clean implementation with proper error handling."
-}
-```
-
-> `status`: `"APPROVED"` | `"REJECTED"`
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Review submitted."
-}
-```
-
-**Error — Already reviewed (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "Entry is already 'APPROVED'."
-}
-```
-
----
-
-### `GET /mentor/company/my-orgs/`
-
-List all Company Mentor rows for the authenticated user (one per verified company org).
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": {
-    "orgs": [
-      {
-        "id": "um-uuid-c01",
-        "mentor_tier": "COMPANY_MENTOR",
-        "org_id": "org-uuid-acme",
-        "org_name": "Acme Corp",
-        "org_type": "Company",
-        "is_verified": true,
-        "verified_at": "2026-05-20T11:00:00Z"
-      },
-      {
-        "id": "um-uuid-c03",
-        "mentor_tier": "COMPANY_MENTOR",
-        "org_id": "org-uuid-techco",
-        "org_name": "TechCo Pvt Ltd",
-        "org_type": "Company",
-        "is_verified": false,
-        "verified_at": null
-      }
-    ]
-  }
-}
-```
-
----
-
-### `GET /mentor/company/availability/`
-
-List availability slots for the authenticated company mentor.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Returns `400` if the user has no verified `COMPANY_MENTOR` rows.
-
----
-
-### `POST /mentor/company/availability/`
-
-Create an availability slot.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: User must have at least one verified `COMPANY_MENTOR` row.
-
-**Request Body**
-```json
-{
-  "weekday": 2,
-  "start_time": "09:00:00",
-  "end_time": "11:00:00",
-  "timezone": "Asia/Kolkata"
-}
-```
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Availability slot created.",
-  "response": {
-    "slot": {
-      "id": "slot-uuid-c01",
-      "mentor_user_id": "user-uuid-001",
-      "weekday": 2,
-      "start_time": "09:00:00",
-      "end_time": "11:00:00",
-      "timezone": "Asia/Kolkata",
-      "is_active": true
-    }
-  }
-}
-```
-
----
-
----
-
-# 22. Campus Mentor
-
-> **Prefix**: `/api/v1/dashboard/mentor/campus-mentor/`
->
-> Campus mentors are users with a verified `UserMentor` row where `mentor_tier = "CAMPUS_MENTOR"` and `org_id` points to a **College-type** organisation.
->
-> **Tier enforcement**: Every write endpoint verifies that the requesting user has `is_verified=True` for the exact `(CAMPUS_MENTOR, org_id)` combination. Campus mentors cannot use company-mentor endpoints, cannot manage events or sessions of other campuses, and cannot review tasks from non-campus users.
->
-> **Campus-only feature**: Campus mentors can additionally create and manage **campus events** — an exclusive capability not available to company or IG mentors.
-
----
-
-### `GET /mentor/campus-mentor/onboarding/`
-
-List the authenticated user's own Campus Mentor application rows.
-
-| | |
-|---|---|
-| **Roles** | Any authenticated user |
-| **Auth** | JWT required |
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": {
-    "mentors": [
-      {
-        "id": "um-uuid-cam01",
-        "full_name": "Asha Krishnan",
-        "email": "asha@geckerala.ac.in",
-        "muid": "asha@mulearn",
-        "mentor_tier": "CAMPUS_MENTOR",
-        "org_id": "org-uuid-gec",
-        "org_name": "GEC Kerala",
-        "org_type": "College",
-        "about": "CS faculty with focus on competitive programming.",
-        "expertise": ["Data Structures", "Algorithms", "C++"],
-        "reason": "Want to bridge the gap between academics and industry.",
-        "is_verified": true,
-        "verified_at": "2026-05-15T09:00:00Z",
-        "verification_note": "Faculty credentials confirmed.",
-        "hours": 8,
-        "created_at": "2026-05-05T10:00:00Z"
-      }
-    ]
-  }
-}
-```
-
----
-
-### `POST /mentor/campus-mentor/onboarding/`
-
-Apply to become a Campus Mentor for a specific college organisation.
-
-| | |
-|---|---|
-| **Roles** | Any authenticated user |
-| **Auth** | JWT required |
-
-**Rules**
-- `org` must point to an existing organisation with `org_type = "College"` — returns `400` otherwise
-- Only one application per `(user, CAMPUS_MENTOR, org)` — duplicate returns `400`
-- Application starts `is_verified = False`
-
-**Request Body**
-```json
-{
-  "org": "org-uuid-gec",
-  "about": "CS faculty with 5 years of teaching experience at GEC Kerala.",
-  "expertise": ["Data Structures", "Algorithms", "C++"],
-  "reason": "Want to bridge the gap between academics and industry."
-}
-```
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Campus mentor application submitted. Awaiting admin approval.",
-  "response": {
-    "mentor": {
-      "id": "um-uuid-cam02",
-      "mentor_tier": "CAMPUS_MENTOR",
-      "org_id": "org-uuid-gec",
-      "org_name": "GEC Kerala",
-      "is_verified": false,
-      "created_at": "2026-05-27T10:00:00Z"
-    }
-  }
-}
-```
-
-**Error — Wrong org type (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "A valid College organisation id is required."
-}
-```
-
-**Error — Duplicate (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "You have already applied as a campus mentor for this organisation."
-}
-```
-
----
-
-### `PATCH /mentor/campus-mentor/onboarding/<mentor_id>/`
-
-Update own Campus Mentor profile.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Request Body** *(all fields optional)*
-```json
-{
-  "about": "Now also mentoring in competitive programming.",
-  "expertise": ["Data Structures", "Algorithms", "C++", "Competitive Programming"]
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/list/`
-
-Admin: paginated list of all Campus Mentor applications.
-
-| | |
-|---|---|
-| **Roles** | ADMIN |
-
-**Query Parameters**
-
-| Param | Type | Description |
-|---|---|---|
-| `org_id` | UUID | Filter by college org |
-| `is_verified` | boolean string | `true` / `false` |
-| `search` | string | Name, email, or org name |
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "id": "um-uuid-cam01",
-      "full_name": "Asha Krishnan",
-      "email": "asha@geckerala.ac.in",
-      "muid": "asha@mulearn",
-      "mentor_tier": "CAMPUS_MENTOR",
-      "org_id": "org-uuid-gec",
-      "org_name": "GEC Kerala",
-      "org_type": "College",
-      "is_verified": true,
-      "created_at": "2026-05-05T10:00:00Z"
-    }
-  ],
-  "pagination": { "count": 15, "totalPages": 2, "isNext": true, "isPrev": false }
-}
-```
-
----
-
-### `PATCH /mentor/campus-mentor/<mentor_id>/verify/`
-
-Admin approves or rejects a Campus Mentor application.
-
-| | |
-|---|---|
-| **Roles** | ADMIN |
-
-**On approve**: `is_verified = True`, assigns existing `"Mentor"` system role (idempotent), logs action.
-
-**Request Body — Approve**
-```json
-{
-  "action": "approve",
-  "verification_note": "Faculty credentials verified with institution."
-}
-```
-
-**Response — Approve (200 OK)**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Campus mentor approved.",
-  "response": {
-    "mentor": {
-      "id": "um-uuid-cam01",
-      "mentor_tier": "CAMPUS_MENTOR",
-      "org_id": "org-uuid-gec",
-      "org_name": "GEC Kerala",
-      "is_verified": true,
-      "verified_at": "2026-05-27T12:00:00Z"
-    }
-  }
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/sessions/`
-
-List sessions scoped to the requesting mentor's verified college org(s).
-
-| | |
-|---|---|
-| **Roles** | ADMIN, MENTOR |
-
-**Tier enforcement**: MENTOR only sees sessions whose `org_id` matches one of their verified `CAMPUS_MENTOR` rows.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "id": "sess-uuid-cam01",
-      "title": "DSA Workshop — Arrays & Sorting",
-      "org_id": "org-uuid-gec",
-      "org_name": "GEC Kerala",
-      "ig_id": null,
-      "ig_name": null,
-      "status": "SCHEDULED",
-      "mode": "OFFLINE",
-      "venue": "CS Lab 2, GEC Kerala",
-      "starts_at": "2026-06-05T09:00:00Z",
-      "ends_at": "2026-06-05T12:00:00Z",
-      "created_by_name": "Asha Krishnan",
-      "participant_count": 35
-    }
-  ],
-  "pagination": { "count": 6, "totalPages": 1, "isNext": false, "isPrev": false }
-}
-```
-
----
-
-### `POST /mentor/campus-mentor/sessions/`
-
-Create a session scoped to a campus org.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Requester must have `is_verified=True` for `(CAMPUS_MENTOR, org)`.
-**Auto-status**: `SCHEDULED` — no admin approval needed.
-**Optional `ig`**: Include to link the session to a specific Interest Group chapter at this campus.
-
-**Request Body**
-```json
-{
-  "org": "org-uuid-gec",
-  "title": "DSA Workshop — Arrays & Sorting",
-  "description": "Hands-on session on array manipulation and sorting algorithms.",
-  "mode": "OFFLINE",
-  "venue": "CS Lab 2, GEC Kerala",
-  "starts_at": "2026-06-05T09:00:00Z",
-  "ends_at": "2026-06-05T12:00:00Z",
-  "max_participants": 40,
-  "ig": "ig-uuid-dsa"
-}
-```
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Campus session created.",
-  "response": {
-    "session": {
-      "id": "sess-uuid-cam01",
-      "title": "DSA Workshop — Arrays & Sorting",
-      "org_id": "org-uuid-gec",
-      "org_name": "GEC Kerala",
-      "status": "SCHEDULED",
-      "is_global": false,
-      "mode": "OFFLINE",
-      "venue": "CS Lab 2, GEC Kerala"
-    }
-  }
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/sessions/<session_id>/`
-### `PATCH /mentor/campus-mentor/sessions/<session_id>/`
-### `DELETE /mentor/campus-mentor/sessions/<session_id>/`
-
-CRUD on a single campus session. `DELETE` sets `status = "CANCELLED"`.
-
-| | |
-|---|---|
-| **Roles** | GET/DELETE: ADMIN, MENTOR · PATCH: MENTOR (creator only) |
-| **Tier enforcement** | MENTOR must have verified `CAMPUS_MENTOR` row for the session's `org_id` |
-
----
-
-### `GET /mentor/campus-mentor/opportunities/`
-
-List opportunities scoped to the mentor's campus org(s).
-
-| | |
-|---|---|
-| **Roles** | ADMIN, MENTOR |
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "id": "opp-uuid-cam01",
-      "org_id": "org-uuid-gec",
-      "org_name": "GEC Kerala",
-      "ig_id": null,
-      "ig_name": null,
-      "type": "HACKATHON",
-      "title": "GEC Internal Hackathon 2026",
-      "description": "48-hour hackathon for all GEC students.",
-      "eligibility": "Currently enrolled GEC students only.",
-      "application_url": "https://gec.ac.in/hackathon/register",
-      "starts_at": "2026-07-15T09:00:00Z",
-      "ends_at": "2026-07-17T09:00:00Z",
-      "status": "PUBLISHED",
-      "created_by_name": "Asha Krishnan",
-      "created_at": "2026-05-25T11:00:00Z"
-    }
-  ],
-  "pagination": { "count": 2, "totalPages": 1, "isNext": false, "isPrev": false }
-}
-```
-
----
-
-### `POST /mentor/campus-mentor/opportunities/`
-
-Create a campus-scoped opportunity.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: `is_verified=True` for `(CAMPUS_MENTOR, org)` required.
-
-**Request Body**
-```json
-{
-  "org": "org-uuid-gec",
-  "type": "HACKATHON",
-  "title": "GEC Internal Hackathon 2026",
-  "description": "48-hour hackathon for all GEC students.",
-  "eligibility": "Currently enrolled GEC students only.",
-  "application_url": "https://gec.ac.in/hackathon/register",
-  "starts_at": "2026-07-15T09:00:00Z",
-  "ends_at": "2026-07-17T09:00:00Z",
-  "status": "PUBLISHED"
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/opportunities/<opportunity_id>/`
-### `PATCH /mentor/campus-mentor/opportunities/<opportunity_id>/`
-### `DELETE /mentor/campus-mentor/opportunities/<opportunity_id>/`
-
-CRUD on a single campus opportunity. `DELETE` sets `status = "ARCHIVED"`.
-
-| | |
-|---|---|
-| **Roles** | GET/DELETE: ADMIN, MENTOR · PATCH: MENTOR (creator only) |
-
----
-
-### `GET /mentor/campus-mentor/mentees/`
-
-Distinct list of campus students who attended sessions in the mentor's college org(s).
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Only sessions belonging to verified `CAMPUS_MENTOR` orgs are considered.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "user_id": "user-uuid-101",
-      "user__full_name": "Arun S",
-      "user__muid": "arun@mulearn",
-      "user__email": "arun@geckerala.ac.in",
-      "total_sessions": 5
-    }
-  ],
-  "pagination": { "count": 35, "totalPages": 4, "isNext": true, "isPrev": false }
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/review-queue/`
-
-KarmaActivityLog entries pending review for students in the mentor's campus org(s).
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Only KAL entries from users whose `UserOrganizationLink.org_id` is in the mentor's verified college org list are returned.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": [
-    {
-      "id": "kal-uuid-cam01",
-      "user_name": "Arun S",
-      "user_muid": "arun@mulearn",
-      "task_title": "Implement Binary Search Tree",
-      "task_hashtag": "#bst",
-      "ig_name": "Data Structures",
-      "karma": 400,
-      "mentor_review_status": "PENDING",
-      "created_at": "2026-05-26T07:30:00Z"
-    }
-  ],
-  "pagination": { "count": 8, "totalPages": 1, "isNext": false, "isPrev": false }
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/review-queue/<kal_id>/`
-### `PATCH /mentor/campus-mentor/review-queue/<kal_id>/`
-
-GET retrieves a single entry. PATCH approves or rejects it.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-| **Tier enforcement** | Submitting user must be in one of the mentor's verified campus orgs |
-
-**PATCH Request Body**
-```json
-{
-  "status": "APPROVED",
-  "feedback": "Correct implementation with proper edge case handling."
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/events/`
-
-List campus events scoped to the mentor's verified college org(s).
-
-> **Campus-exclusive feature** — only `CAMPUS_MENTOR` tier has access to event management.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Tier enforcement**: Events aggregated across all verified `CAMPUS_MENTOR` orgs.
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
+  "message": { "general": ["Success"] },
   "response": {
     "data": [
       {
-        "id": "event-uuid-cam01",
-        "title": "CS Department Tech Fest 2026",
-        "org_id": "org-uuid-gec",
-        "org_name": "GEC Kerala",
-        "start_datetime": "2026-06-20T09:00:00Z",
-        "end_datetime": "2026-06-20T18:00:00Z",
-        "venue": "GEC Main Auditorium",
-        "created_by": "Asha Krishnan"
+        "id": "mentor-uuid",
+        "user_id": "user-uuid",
+        "user_full_name": "Arjun Menon",
+        "user_email": "arjun@example.com",
+        "mentor_tier": "IG_MENTOR",
+        "status": "PENDING",
+        "created_at": "2026-01-15T10:00:00Z",
+        "updated_at": "2026-01-15T10:00:00Z"
       }
     ],
-    "pagination": { "count": 2, "totalPages": 1, "isNext": false, "isPrev": false }
+    "pagination": { "count": 1, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
   }
 }
 ```
 
 ---
 
-### `POST /mentor/campus-mentor/events/`
+## 5. `detail/<mentor_id>/`
 
-Create a new campus event.
+**`GET /api/v1/dashboard/mentor/detail/<mentor_id>/`**
 
-| | |
-|---|---|
-| **Roles** | MENTOR |
+Admin detail for one mentor record.
 
-**Tier enforcement**: Requester must have `is_verified=True` for `(CAMPUS_MENTOR, org)`.
+**Roles:** `Admin`
 
-**Request Body**
+**Success response:** Full mentor object (same shape as [profile GET](#3-profile)).
+
+---
+
+## 6. `verify/<mentor_id>/`
+
+**`PATCH /api/v1/dashboard/mentor/verify/<mentor_id>/`**
+
+Approve or reject a mentor application. On `APPROVED`, assigns the `Mentor` role and creates `UserIgLink` rows for each `preferred_ig_id` when tier is `IG_MENTOR`.
+
+**Roles:** `Admin`
+
+**Request body — Approve:**
+
 ```json
 {
-  "org": "org-uuid-gec",
-  "title": "CS Department Tech Fest 2026",
-  "start_datetime": "2026-06-20T09:00:00Z",
-  "end_datetime": "2026-06-20T18:00:00Z",
-  "venue": "GEC Main Auditorium",
-  "description": "Annual department-level tech fest with workshops and competitions."
+  "status": "APPROVED"
 }
 ```
 
-**Response — 200 OK**
+**Request body — Reject:**
+
+```json
+{
+  "status": "REJECTED",
+  "verification_note": "Insufficient detail in expertise section."
+}
+```
+
+| Field | Required |
+|-------|----------|
+| `status` | Yes — `APPROVED` or `REJECTED` |
+| `verification_note` | Required when `REJECTED` |
+
+**Success response:**
+
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Campus event created.",
-  "response": {
-    "event_id": "event-uuid-cam01"
-  }
-}
-```
-
-**Error — Not a verified campus mentor for this org (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "You are not a verified campus mentor for this organisation."
+  "message": { "general": ["Mentor status updated to APPROVED successfully."] },
+  "response": {}
 }
 ```
 
 ---
 
-### `GET /mentor/campus-mentor/events/<event_id>/`
+## 7. `public/profile/<mentor_id>/`
 
-Retrieve a single campus event.
+**`GET /api/v1/dashboard/mentor/public/profile/<mentor_id>/`**
 
-| | |
-|---|---|
-| **Roles** | MENTOR |
-| **Tier enforcement** | Event must belong to one of the mentor's verified campus orgs |
+View an approved mentor's public profile.
 
----
+**Roles:** Authenticated user
 
-### `PATCH /mentor/campus-mentor/events/<event_id>/`
+**Path params:** `mentor_id` — `UserMentor.id` UUID
 
-Update a campus event.
-
-| | |
-|---|---|
-| **Roles** | MENTOR (creator only) |
-
-**Request Body** *(all fields optional)*
-```json
-{
-  "title": "CS Department Tech Fest 2026 — Revised Schedule",
-  "start_datetime": "2026-06-21T09:00:00Z"
-}
-```
+**Success response:** Full mentor detail (approved mentors only).
 
 ---
 
-### `DELETE /mentor/campus-mentor/events/<event_id>/`
+## 8. `public/availability/<mentor_id>/`
 
-Delete a campus event.
+**`GET /api/v1/dashboard/mentor/public/availability/<mentor_id>/`**
 
-| | |
-|---|---|
-| **Roles** | MENTOR (creator only) |
+List active availability slots for an approved mentor.
 
-**Response — 200 OK**
+**Roles:** Authenticated user
+
+**Success response:**
+
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Event deleted."
-}
-```
-
-**Error — Not creator (400)**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "You can only delete events you created."
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/my-orgs/`
-
-List all Campus Mentor rows for the authenticated user.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "response": {
-    "orgs": [
-      {
-        "id": "um-uuid-cam01",
-        "mentor_tier": "CAMPUS_MENTOR",
-        "org_id": "org-uuid-gec",
-        "org_name": "GEC Kerala",
-        "org_type": "College",
-        "is_verified": true,
-        "verified_at": "2026-05-15T09:00:00Z"
-      },
-      {
-        "id": "um-uuid-cam04",
-        "mentor_tier": "CAMPUS_MENTOR",
-        "org_id": "org-uuid-nitc",
-        "org_name": "NIT Calicut",
-        "org_type": "College",
-        "is_verified": false,
-        "verified_at": null
-      }
-    ]
-  }
-}
-```
-
----
-
-### `GET /mentor/campus-mentor/availability/`
-
-List availability slots for the campus mentor.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-| **Tier enforcement** | Returns `400` if user has no verified `CAMPUS_MENTOR` rows |
-
----
-
-### `POST /mentor/campus-mentor/availability/`
-
-Create an availability slot.
-
-| | |
-|---|---|
-| **Roles** | MENTOR |
-
-**Request Body**
-```json
-{
-  "weekday": 1,
-  "start_time": "14:00:00",
-  "end_time": "16:00:00",
-  "timezone": "Asia/Kolkata",
-  "ig": "ig-uuid-dsa"
-}
-```
-
-**Response — 200 OK**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Availability slot created.",
-  "response": {
-    "slot": {
-      "id": "slot-uuid-cam01",
-      "mentor_user_id": "user-uuid-asha",
-      "weekday": 1,
-      "start_time": "14:00:00",
-      "end_time": "16:00:00",
+  "message": { "general": ["Success"] },
+  "response": [
+    {
+      "id": "slot-uuid",
+      "mentor_user_id": "user-uuid",
+      "ig_id": "ig-uuid",
+      "ig_name": "Web Development",
+      "weekday": 2,
+      "start_time": "18:00:00",
+      "end_time": "20:00:00",
       "timezone": "Asia/Kolkata",
-      "is_active": true
+      "is_active": true,
+      "valid_from": "2026-05-01",
+      "valid_to": "2026-12-31",
+      "created_at": "2026-04-01T10:00:00Z",
+      "updated_at": "2026-04-01T10:00:00Z"
     }
+  ]
+}
+```
+
+`weekday`: `1` = Monday … `7` = Sunday
+
+---
+
+## 9. `availability/`
+
+**`GET /api/v1/dashboard/mentor/availability/`**
+
+List the logged-in mentor's availability slots (paginated).
+
+**Roles:** `Mentor`
+
+**Query params:**
+
+| Param | Description |
+|-------|-------------|
+| `ig_id` | Filter by Interest Group |
+| `is_active` | `true` or `false` |
+| `pageIndex`, `perPage`, `search`, `sortBy` | Sort: `weekday`, `start_time`, `created_at` |
+
+**Success response:** Paginated array of slot objects (same shape as [public availability](#8-publicavailabilitymentor_id)).
+
+---
+
+**`POST /api/v1/dashboard/mentor/availability/`**
+
+Create an availability slot. Mentor must be assigned to the IG with `assignment_type = MENTOR`.
+
+**Request body:**
+
+```json
+{
+  "ig": "ig-uuid-web-dev",
+  "weekday": 2,
+  "start_time": "18:00:00",
+  "end_time": "20:00:00",
+  "timezone": "Asia/Kolkata",
+  "is_active": true,
+  "valid_from": "2026-05-01",
+  "valid_to": "2026-12-31"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `ig` | Yes | Interest Group UUID |
+| `weekday` | Yes | 1–7 (Mon–Sun) |
+| `start_time` | Yes | `HH:MM:SS` |
+| `end_time` | Yes | Must be after `start_time` |
+| `timezone` | No | Default `Asia/Kolkata` |
+| `is_active` | No | Default `true` |
+| `valid_from`, `valid_to` | No | Optional date range |
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Availability slot created successfully."] },
+  "response": {
+    "ig": "ig-uuid-web-dev",
+    "weekday": 2,
+    "start_time": "18:00:00",
+    "end_time": "20:00:00",
+    "timezone": "Asia/Kolkata",
+    "is_active": true,
+    "valid_from": "2026-05-01",
+    "valid_to": "2026-12-31"
+  }
+}
+```
+
+**Error:** Not assigned as mentor for the given IG.
+
+---
+
+## 10. `availability/<slot_id>/`
+
+**`GET /api/v1/dashboard/mentor/availability/<slot_id>/`**
+
+Single slot detail for the logged-in mentor.
+
+**Success response:** Single slot object (not paginated).
+
+---
+
+**`PATCH /api/v1/dashboard/mentor/availability/<slot_id>/`**
+
+Update a slot (partial). Same body fields as POST.
+
+**Success response:** Updated slot fields.
+
+---
+
+**`DELETE /api/v1/dashboard/mentor/availability/<slot_id>/`**
+
+Permanently delete a slot.
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Availability slot deleted successfully."] },
+  "response": {}
+}
+```
+
+---
+
+## 11. `session/create/`
+
+**`POST /api/v1/dashboard/mentor/session/create/`**
+
+Create a mentorship session (starts in `PENDING_APPROVAL`). Mentor must be assigned to the session's IG.
+
+**Roles:** `Mentor`
+
+**Request body:**
+
+```json
+{
+  "ig": "ig-uuid-web-dev",
+  "title": "Intro to REST APIs",
+  "description": "Hands-on session covering HTTP verbs, status codes, and DRF basics.",
+  "mode": "ONLINE",
+  "starts_at": "2026-06-15T14:00:00Z",
+  "ends_at": "2026-06-15T16:00:00Z",
+  "meeting_link": "https://meet.example.com/abc-defg-hij",
+  "venue": null,
+  "max_participants": 30
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `ig` | Yes | Interest Group UUID |
+| `title` | Yes | Max 150 chars |
+| `description` | No | |
+| `mode` | Yes | `ONLINE`, `OFFLINE`, `HYBRID` |
+| `starts_at` | Yes | ISO 8601 datetime |
+| `ends_at` | Yes | Must be after `starts_at` |
+| `meeting_link` | No | For online/hybrid |
+| `venue` | No | For offline/hybrid |
+| `max_participants` | No | Cap on joins |
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Session created successfully and is pending approval."] },
+  "response": {
+    "ig": "ig-uuid-web-dev",
+    "title": "Intro to REST APIs",
+    "description": "Hands-on session covering HTTP verbs, status codes, and DRF basics.",
+    "mode": "ONLINE",
+    "starts_at": "2026-06-15T14:00:00Z",
+    "ends_at": "2026-06-15T16:00:00Z",
+    "meeting_link": "https://meet.example.com/abc-defg-hij",
+    "venue": null,
+    "max_participants": 30
   }
 }
 ```
 
 ---
 
-## Tier Enforcement Summary
+## 12. `session/list/`
 
-| Endpoint group | `mentor_tier` required | `org_id` check | System role |
-|---|---|---|---|
-| `/mentor/onboarding/` | `IG_MENTOR` or `MENTOR` | N/A | `Mentor` |
-| `/mentor/sessions/` | `IG_MENTOR` or `MENTOR` | N/A | `Mentor` |
-| `/mentor/company/*` | `COMPANY_MENTOR` | exact Company org match | `Mentor` |
-| `/mentor/campus-mentor/*` | `CAMPUS_MENTOR` | exact College org match | `Mentor` |
-| `/mentor/campus-mentor/events/*` | `CAMPUS_MENTOR` only | exact College org match | `Mentor` |
+**`GET /api/v1/dashboard/mentor/session/list/`**
 
-> A user holding all four tiers simultaneously (one IG mentor row, one global row, one company row, one campus row) can freely use **all** endpoint groups — but each group only sees and acts on its own tier's data.
+List sessions created by the logged-in mentor.
+
+**Roles:** `Mentor`
+
+**Query params:**
+
+| Param | Description |
+|-------|-------------|
+| `status` | Filter by session status |
+| `pageIndex`, `perPage`, `search`, `sortBy` | Search `title`, `description`, `ig__name`; sort `created_at`, `starts_at` |
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Success"] },
+  "response": {
+    "data": [
+      {
+        "id": "session-uuid",
+        "ig_id": "ig-uuid",
+        "ig_name": "Web Development",
+        "title": "Intro to REST APIs",
+        "mode": "ONLINE",
+        "starts_at": "2026-06-15T14:00:00Z",
+        "ends_at": "2026-06-15T16:00:00Z",
+        "status": "PENDING_APPROVAL",
+        "created_by_id": "user-uuid",
+        "created_by_name": "Arjun Menon",
+        "created_at": "2026-05-20T10:00:00Z",
+        "max_participants": 30
+      }
+    ],
+    "pagination": { "count": 1, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
+  }
+}
+```
+
+---
+
+## 13. `session/list/<session_id>/`
+
+**`GET /api/v1/dashboard/mentor/session/list/<session_id>/`**
+
+Single session detail (mentor must be the creator).
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Success"] },
+  "response": {
+    "id": "session-uuid",
+    "ig_id": "ig-uuid",
+    "ig_name": "Web Development",
+    "title": "Intro to REST APIs",
+    "mode": "ONLINE",
+    "starts_at": "2026-06-15T14:00:00Z",
+    "ends_at": "2026-06-15T16:00:00Z",
+    "status": "SCHEDULED",
+    "created_by_id": "user-uuid",
+    "created_by_name": "Arjun Menon",
+    "created_at": "2026-05-20T10:00:00Z",
+    "max_participants": 30,
+    "description": "Hands-on session covering HTTP verbs and DRF.",
+    "meeting_link": "https://meet.example.com/abc-defg-hij",
+    "venue": null
+  }
+}
+```
+
+---
+
+## 14. `session/update/<session_id>/`
+
+**`PATCH /api/v1/dashboard/mentor/session/update/<session_id>/`**
+
+Update a session. Cannot edit `COMPLETED`, `CANCELLED`, or `REJECTED` sessions. Editing a `SCHEDULED` session resets status to `PENDING_APPROVAL`.
+
+**Request example:**
+
+```json
+{
+  "title": "Intro to REST APIs (Updated)",
+  "starts_at": "2026-06-16T14:00:00Z",
+  "ends_at": "2026-06-16T16:00:00Z",
+  "max_participants": 25
+}
+```
+
+**Success response:** Updated session fields.
+
+---
+
+**`DELETE /api/v1/dashboard/mentor/session/update/<session_id>/`**
+
+Soft-delete a session (`is_deleted = true`).
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Session deleted successfully."] },
+  "response": {}
+}
+```
+
+---
+
+## 15. `session/available/`
+
+**`GET /api/v1/dashboard/mentor/session/available/`**
+
+List `SCHEDULED` sessions for Interest Groups the current user belongs to (learner discovery).
+
+**Roles:** Authenticated user
+
+**Success response:** Paginated session list (same item shape as [session list](#12-sessionlist)).
+
+---
+
+## 16. `session/admin/list/`
+
+**`GET /api/v1/dashboard/mentor/session/admin/list/`**
+
+Admin view of all non-deleted sessions.
+
+**Roles:** `Admin`
+
+**Query params:** `status`, `ig_id`, plus pagination/search
+
+**Success response:** Paginated session list.
+
+---
+
+## 17. `session/admin/verify/<session_id>/`
+
+**`PATCH /api/v1/dashboard/mentor/session/admin/verify/<session_id>/`**
+
+Approve or reject a session in `PENDING_APPROVAL`.
+
+**Roles:** `Admin`
+
+**Request body — Schedule:**
+
+```json
+{
+  "status": "SCHEDULED"
+}
+```
+
+**Request body — Reject:**
+
+```json
+{
+  "status": "REJECTED"
+}
+```
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Session status updated to SCHEDULED successfully."] },
+  "response": {}
+}
+```
+
+**Error:** Only `PENDING_APPROVAL` sessions can be verified.
+
+---
+
+## 18. `session/participation/join/<session_id>/`
+
+**`POST /api/v1/dashboard/mentor/session/participation/join/<session_id>/`**
+
+Join a scheduled session as a mentee.
+
+**Roles:** Authenticated user
+
+**Request body:** None (empty `{}` is fine)
+
+**Rules:**
+
+- Session must be `SCHEDULED`
+- User must not already be registered
+- Respects `max_participants` if set
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Successfully joined the session."] },
+  "response": {
+    "id": "link-uuid",
+    "session_id": "session-uuid",
+    "user_id": "user-uuid",
+    "user_full_name": "Riya Sharma",
+    "mu_id": "riya-sharma@mulearn",
+    "participant_role": "MENTEE",
+    "attendance_status": "INVITED",
+    "progress_note": null,
+    "feedback": null,
+    "contributed_minutes": null,
+    "created_at": "2026-06-10T10:00:00Z"
+  }
+}
+```
+
+**Participant roles:** `MENTOR`, `MENTEE`, `CO_MENTOR`  
+**Attendance statuses:** `INVITED`, `ATTENDED`, `ABSENT`
+
+---
+
+## 19. `session/participant/history/`
+
+**`GET /api/v1/dashboard/mentor/session/participant/history/`**
+
+Sessions the current user has joined.
+
+**Success response:** Paginated array of participant link objects (same shape as join response).
+
+---
+
+## 20. `session/participant/list/<session_id>/`
+
+**`GET /api/v1/dashboard/mentor/session/participant/list/<session_id>/`**
+
+Mentor lists all participants for a session they created.
+
+**Roles:** `Mentor` (session creator)
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Success"] },
+  "response": {
+    "data": [
+      {
+        "id": "link-uuid",
+        "session_id": "session-uuid",
+        "user_id": "user-uuid",
+        "user_full_name": "Riya Sharma",
+        "mu_id": "riya-sharma@mulearn",
+        "participant_role": "MENTEE",
+        "attendance_status": "INVITED",
+        "progress_note": null,
+        "feedback": null,
+        "contributed_minutes": null,
+        "created_at": "2026-06-10T10:00:00Z"
+      }
+    ],
+    "pagination": { "count": 1, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
+  }
+}
+```
+
+---
+
+## 21. `session/participant/update/<link_id>/`
+
+**`PATCH /api/v1/dashboard/mentor/session/participant/update/<link_id>/`**
+
+Mentor updates attendance and progress for a participant.
+
+**Roles:** `Mentor` (must own the parent session)
+
+**Request body:**
+
+```json
+{
+  "attendance_status": "ATTENDED",
+  "progress_note": "Completed exercises 1–3; strong grasp of REST concepts.",
+  "contributed_minutes": 90
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `attendance_status` | `INVITED`, `ATTENDED`, `ABSENT` |
+| `progress_note` | Max 500 chars |
+| `contributed_minutes` | Must be > 0 if provided |
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Participant record updated successfully."] },
+  "response": {
+    "attendance_status": "ATTENDED",
+    "progress_note": "Completed exercises 1–3; strong grasp of REST concepts.",
+    "contributed_minutes": 90
+  }
+}
+```
+
+---
+
+## 22. `session/participant/feedback/<session_id>/`
+
+**`PATCH /api/v1/dashboard/mentor/session/participant/feedback/<session_id>/`**
+
+Participant submits feedback after attending a session.
+
+**Roles:** Authenticated user (must be a participant with `attendance_status = ATTENDED`)
+
+**Request body:**
+
+```json
+{
+  "feedback": "Very clear explanations and helpful Q&A. Would attend again."
+}
+```
+
+**Success response:**
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Feedback submitted successfully."] },
+  "response": {
+    "id": "link-uuid",
+    "session_id": "session-uuid",
+    "user_id": "user-uuid",
+    "user_full_name": "Riya Sharma",
+    "mu_id": "riya-sharma@mulearn",
+    "participant_role": "MENTEE",
+    "attendance_status": "ATTENDED",
+    "progress_note": null,
+    "feedback": "Very clear explanations and helpful Q&A. Would attend again.",
+    "contributed_minutes": null,
+    "created_at": "2026-06-10T10:00:00Z"
+  }
+}
+```
+
+**Errors:** Not a participant; feedback empty; attendance not `ATTENDED`.
+
+---
+
+## Usage flows
+
+### Mentor onboarding
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as Mentor API
+    participant Admin as Admin
+
+    U->>API: POST /register/
+    API-->>U: status PENDING
+    U->>API: GET /status/
+    Admin->>API: PATCH /verify/{id}/ APPROVED
+    Note over U,API: Mentor role + IG links created
+    U->>API: GET /profile/
+```
+
+### Session from creation to feedback
+
+```mermaid
+sequenceDiagram
+    participant M as Mentor
+    participant API as Mentor API
+    participant Admin as Admin
+    participant L as Learner
+
+    M->>API: POST /session/create/
+    Admin->>API: PATCH /session/admin/verify/{id}/ SCHEDULED
+    L->>API: GET /session/available/
+    L->>API: POST /session/participation/join/{id}/
+    M->>API: PATCH /session/participant/update/{link_id}/
+    L->>API: PATCH /session/participant/feedback/{id}/
+```
+
+### Availability management
+
+```mermaid
+flowchart LR
+    A[Mentor assigned to IG] --> B[POST /availability/]
+    B --> C[Public GET /public/availability/{mentor_id}/]
+    B --> D[PATCH or DELETE /availability/{slot_id}/]
+```
+
+---
+
+## Related
+
+- Company dashboard (jobs, talent directory): [Dashboard_Company.md](./Dashboard_Company.md)
+- Interactive schema: `/api/docs/` (when `ENABLE_SWAGGER=true`)
+- OpenAPI: `/api/schema/`
