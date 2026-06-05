@@ -1,147 +1,111 @@
-# Intern Dashboard API Documentation
+# Intern Dashboard API Reference
 
-> **Base URL:** `https://<host>/api/v1/dashboard/`  
-> **Authentication:** All endpoints require a valid JWT Bearer token  
-> **Content-Type:** `application/json` (unless noted otherwise)
+**Base URL:** `/api/v1/dashboard/intern/`  
+**Authentication:** All endpoints require a valid JWT token via the `Authorization: Bearer <token>` header.  
+**Default Role Required:** `INTERN` (unless stated otherwise)
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Authentication](#authentication)
-- [Role Permissions](#role-permissions)
-- [Intern APIs (`/intern/`)](#intern-apis)
-  - [Overview](#1-overview)
-  - [Timesheets](#2-timesheets)
-  - [Weekly Reviews](#3-weekly-reviews)
-  - [Leaderboard](#4-leaderboard)
-  - [Tasks (Mine)](#5-tasks-mine)
-  - [Leave](#6-leave)
-  - [Guilds](#7-guilds)
-- [Manage Interns APIs (`/manage-interns/`)](#manage-interns-apis)
-  - [Interns Management](#1-interns-management)
-  - [Status Stats](#2-status-stats)
-  - [Export Interns](#3-export-interns)
-  - [Reviews & Timesheets (Admin)](#4-reviews--timesheets-admin)
-  - [Tasks (Admin)](#5-tasks-admin)
-  - [Leave (Admin)](#6-leave-admin)
-- [Common Query Parameters](#common-query-parameters)
-- [Common Response Format](#common-response-format)
+1. [Overview](#1-overview)
+2. [Timesheets](#2-timesheets)
+3. [Weekly Reviews](#3-weekly-reviews)
+4. [Tasks](#4-tasks)
+5. [Leave Management](#5-leave-management)
+6. [Leaderboard](#6-leaderboard)
+7. [Guilds](#7-guilds)
+8. [Common Patterns](#8-common-patterns)
 
 ---
 
-## Overview
+## 1. Overview
 
-The Intern Dashboard is split into two groups:
+Base path: `/api/v1/dashboard/intern/overview/`
 
-| Group | Base Path | Audience |
-|-------|-----------|----------|
-| **Intern** | `/api/v1/dashboard/intern/` | Interns (role: `Intern`) |
-| **Manage Interns** | `/api/v1/dashboard/manage-interns/` | Admins (role: `Admin`) |
+### 1.1 `GET /overview/status/`
 
----
+Retrieve the authenticated intern's overview stats: guild, karma, streaks, completed tasks, complexity score, and weighted leaderboard score.
 
-## Authentication
-
-All requests must include a JWT token in the `Authorization` header:
-
-```
-Authorization: Bearer <your-jwt-token>
-```
-
----
-
-## Role Permissions
-
-| Role | Access |
-|------|--------|
-| `Intern` | Can access all `/intern/` endpoints and view leaderboard |
-| `Admin` | Can access all `/manage-interns/` endpoints and view leaderboard |
-
----
-
-## Intern APIs
-
-### 1. Overview
-
-#### `GET /intern/overview/status/`
-
-Returns the authenticated intern's current status, karma, streaks, completed tasks, and leaderboard score.
-
-**Role:** `Intern`
-
-**Sample Request:**
+**Request**
 ```http
 GET /api/v1/dashboard/intern/overview/status/
 Authorization: Bearer <token>
 ```
 
-**Sample Response (200 OK):**
+**Response `200 OK`**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Success",
+  "message": "Successful",
   "response": {
-    "guild": "CATALYST",
+    "guild": "DESIGN",
     "status": "ACTIVE",
-    "total_intern_karma": 320,
-    "daily_streak": 5,
-    "weekly_streak": 3,
+    "total_intern_karma": 340,
+    "daily_streak": 12,
+    "weekly_streak": 5,
     "completed_tasks": 8,
-    "complexity_score": 18,
-    "score": 472.5
+    "complexity_score": 22,
+    "score": 1248.5
   }
+}
+```
+
+**Error `400 Bad Request`** — intern not found
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "Not an intern."
 }
 ```
 
 ---
 
-#### `GET /intern/overview/activity/`
+### 1.2 `GET /overview/activity/`
 
-Returns a paginated list of the intern's karma activity logs (intern-specific tasks only).
+Retrieve a paginated list of the intern's karma activity log (only `#intern-*` tagged tasks).
 
-**Role:** `Intern`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number (default: 1) |
-| `page_size` | int | Results per page (default: 10) |
-| `search` | string | Filter by task title |
-| `sortBy` | string | Sort field (e.g., `created_at`) |
-
-**Sample Request:**
+**Request**
 ```http
-GET /api/v1/dashboard/intern/overview/activity/?page=1&page_size=5
+GET /api/v1/dashboard/intern/overview/activity/?page=1&perPage=10
 Authorization: Bearer <token>
 ```
 
-**Sample Response (200 OK):**
+**Query Parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | int | `1` | Page number |
+| `perPage` | int | `10` | Items per page |
+| `search` | string | — | Search by task title |
+| `sortBy` | string | `created_at` | Sort field |
+| `sortOrder` | string | `desc` | `asc` or `desc` |
+
+**Response `200 OK`**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Success",
+  "message": "Successful",
   "response": {
     "data": [
       {
-        "id": "a3f91c2e-0001-4b2d-9bbb-000000000001",
-        "task_title": "Daily Standup Log",
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "task_title": "#intern-daily-timesheet",
         "karma": 10,
-        "created_at": "2026-06-03T09:15:00Z"
+        "created_at": "2024-06-03T18:30:00Z"
       },
       {
-        "id": "a3f91c2e-0001-4b2d-9bbb-000000000002",
-        "task_title": "Weekly Review Submission",
+        "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "task_title": "#intern-weekly-review",
         "karma": 25,
-        "created_at": "2026-05-30T10:00:00Z"
+        "created_at": "2024-06-02T12:00:00Z"
       }
     ],
     "pagination": {
-      "count": 14,
+      "count": 24,
       "totalPages": 3,
       "isNext": true,
       "isPrev": false,
@@ -153,44 +117,42 @@ Authorization: Bearer <token>
 
 ---
 
-#### `GET /intern/overview/leaderboard/top/`
+### 1.3 `GET /overview/leaderboard/top/`
 
-Returns the top 3 interns across all guilds by computed leaderboard score.
+Retrieve the top 3 interns on the leaderboard (preview widget for the overview dashboard).
 
-**Role:** `Intern`
-
-**Sample Request:**
+**Request**
 ```http
 GET /api/v1/dashboard/intern/overview/leaderboard/top/
 Authorization: Bearer <token>
 ```
 
-**Sample Response (200 OK):**
+**Response `200 OK`**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Success",
+  "message": "Successful",
   "response": [
     {
-      "user_id": "usr-uuid-001",
-      "full_name": "Alice Johnson",
-      "guild": "CATALYST",
-      "score": 820.0,
+      "user_id": "a1b2c3d4-0000-0000-0000-000000000001",
+      "full_name": "Arjun Nair",
+      "guild": "BACKEND",
+      "score": 2100.0,
       "rank": 1
     },
     {
-      "user_id": "usr-uuid-002",
-      "full_name": "Bob Smith",
-      "guild": "NEXUS",
-      "score": 710.5,
+      "user_id": "a1b2c3d4-0000-0000-0000-000000000002",
+      "full_name": "Meera Pillai",
+      "guild": "DESIGN",
+      "score": 1850.0,
       "rank": 2
     },
     {
-      "user_id": "usr-uuid-003",
-      "full_name": "Carol White",
-      "guild": "VANGUARD",
-      "score": 680.0,
+      "user_id": "a1b2c3d4-0000-0000-0000-000000000003",
+      "full_name": "Rahul Krishnan",
+      "guild": "FRONTEND",
+      "score": 1620.5,
       "rank": 3
     }
   ]
@@ -199,1338 +161,44 @@ Authorization: Bearer <token>
 
 ---
 
-### 2. Timesheets
+## 2. Timesheets
 
-#### `GET /intern/timesheets/`
+Base path: `/api/v1/dashboard/intern/timesheets/`
 
-Returns a paginated list of all timesheets submitted by the authenticated intern.
+### 2.1 `GET /timesheets/`
 
-**Role:** `Intern`
+Retrieve a paginated list of all the authenticated intern's timesheet entries.
 
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `entry_date`, `status`, `category` |
-| `sortBy` | string | `entry_date` or `status` |
-
-**Sample Request:**
+**Request**
 ```http
-GET /api/v1/dashboard/intern/timesheets/?page=1&sortBy=entry_date
+GET /api/v1/dashboard/intern/timesheets/?page=1&perPage=10
 Authorization: Bearer <token>
 ```
 
-**Sample Response (200 OK):**
+**Response `200 OK`**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Success",
+  "message": "Successful",
   "response": {
     "data": [
       {
-        "id": "ts-uuid-001",
-        "entry_date": "2026-06-03",
-        "task_id": "task-uuid-001",
-        "category": "Development",
-        "description": "Worked on intern onboarding flow",
+        "id": "ts-uuid-0001",
+        "entry_date": "2024-06-03",
+        "task_id": null,
+        "category": "DEVELOPMENT",
+        "description": "Worked on the authentication module",
         "hours": "6.50",
         "blockers": "None",
-        "task_status": "IN_PROGRESS",
+        "task_status": null,
         "remark": null,
-        "end_of_day_note": "Good progress made today",
+        "end_of_day_note": "Completed JWT integration",
         "edit_reason": null,
         "status": "PENDING",
         "karma_awarded": null,
         "review_note": null,
-        "created_at": "2026-06-03T18:00:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 20,
-      "totalPages": 2,
-      "isNext": true,
-      "isPrev": false,
-      "nextPage": 2
-    }
-  }
-}
-```
-
----
-
-#### `GET /intern/timesheets/<timesheet_id>/`
-
-Returns a single timesheet entry by ID (must belong to the authenticated intern).
-
-**Role:** `Intern`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/timesheets/ts-uuid-001/
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "id": "ts-uuid-001",
-    "entry_date": "2026-06-03",
-    "task_id": "task-uuid-001",
-    "category": "Development",
-    "description": "Worked on intern onboarding flow",
-    "hours": "6.50",
-    "blockers": "None",
-    "task_status": "IN_PROGRESS",
-    "remark": null,
-    "end_of_day_note": "Good progress today",
-    "edit_reason": null,
-    "status": "PENDING",
-    "karma_awarded": null,
-    "review_note": null,
-    "created_at": "2026-06-03T18:00:00Z"
-  }
-}
-```
-
----
-
-#### `POST /intern/timesheets/`
-
-Submit a new daily timesheet entry. Only active interns can submit.
-
-**Role:** `Intern`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `entry_date` | date | Yes | Date of the entry (not future) |
-| `description` | string | Yes* | Description of work done |
-| `log_description` | string | Yes* | Alias for `description` |
-| `hours` | decimal | Yes* | Hours worked (> 0) |
-| `hours_worked` | decimal | Yes* | Alias for `hours` |
-| `category` | string | No | Category of work |
-| `task` | uuid | No | Linked intern task ID |
-| `task_status` | string | Conditional | Required if `task` is provided (`PENDING`, `IN_PROGRESS`, `COMPLETED`) |
-| `blockers` | string | No | Any blockers faced |
-| `remark` | string | No | Additional remarks |
-| `end_of_day_note` | string | No | EOD note |
-| `edit_reason` | string | Conditional | Required for late submissions (entry_date < yesterday) |
-
-> *One of `description`/`log_description` and one of `hours`/`hours_worked` is required.
-
-**Sample Request:**
-```http
-POST /api/v1/dashboard/intern/timesheets/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "entry_date": "2026-06-03",
-  "description": "Implemented the leave request form UI and connected it to the backend API",
-  "hours": 7.5,
-  "category": "Development",
-  "task": "task-uuid-001",
-  "task_status": "IN_PROGRESS",
-  "blockers": "None",
-  "end_of_day_note": "Will continue the review flow tomorrow"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Timesheet submitted successfully.",
-  "response": {}
-}
-```
-
-**Error – Duplicate Submission (409):**
-```json
-{
-  "hasError": true,
-  "statusCode": 409,
-  "message": "Timesheet for this date already exists.",
-  "response": {}
-}
-```
-
----
-
-#### `PATCH /intern/timesheets/<timesheet_id>/`
-
-Update editable fields (`remark`, `end_of_day_note`) on a submitted timesheet. Requires an `edit_reason`.
-
-**Role:** `Intern`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `edit_reason` | string | Yes | Reason for editing |
-| `remark` | string | No | Updated remark |
-| `end_of_day_note` | string | No | Updated EOD note |
-
-**Sample Request:**
-```http
-PATCH /api/v1/dashboard/intern/timesheets/ts-uuid-001/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "edit_reason": "Corrected the EOD note to better reflect progress",
-  "end_of_day_note": "Completed 70% of the leave request integration"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Timesheet updated successfully.",
-  "response": {}
-}
-```
-
----
-
-#### `GET /intern/timesheets/today/`
-
-Returns today's timesheet for the authenticated intern, if submitted.
-
-**Role:** `Intern`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/timesheets/today/
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "id": "ts-uuid-002",
-    "entry_date": "2026-06-04",
-    "task_id": null,
-    "category": "Research",
-    "description": "Explored API documentation tooling",
-    "hours": "4.00",
-    "blockers": "None",
-    "task_status": null,
-    "remark": null,
-    "end_of_day_note": "Finished today's research",
-    "edit_reason": null,
-    "status": "PENDING",
-    "karma_awarded": null,
-    "review_note": null,
-    "created_at": "2026-06-04T17:00:00Z"
-  }
-}
-```
-
----
-
-#### `GET /intern/timesheets/history/`
-
-Returns a paginated timesheet history for the authenticated intern (same as `GET /intern/timesheets/` – dedicated history route).
-
-**Role:** `Intern`
-
-**Query Parameters:** Same as `GET /intern/timesheets/`
-
----
-
-#### `GET /intern/timesheets/summary/`
-
-Returns the authenticated intern's current and longest timesheet streak.
-
-**Role:** `Intern`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/timesheets/summary/
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "current_streak": 5,
-    "longest_streak": 14
-  }
-}
-```
-
----
-
-### 3. Weekly Reviews
-
-#### `GET /intern/reviews/`
-
-Returns a paginated list of all weekly review submissions for the authenticated intern.
-
-**Role:** `Intern`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `iso_year`, `iso_week`, `status` |
-| `sortBy` | string | `iso_year`, `iso_week`, `status` |
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/reviews/?page=1&sortBy=iso_week
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "data": [
-      {
-        "id": "rev-uuid-001",
-        "iso_year": 2026,
-        "iso_week": 23,
-        "week_start_date": "2026-06-01",
-        "week_end_date": "2026-06-07",
-        "team": "CATALYST",
-        "is_on_leave": false,
-        "tasks_assigned": "Build intern leave API",
-        "tasks_completed": "Leave request form UI",
-        "weekly_review": "Good week overall",
-        "task_remarks": {
-          "rating": 4,
-          "next_week_plan": "Complete review integration",
-          "challenges_faced": "Understanding streak logic",
-          "learnings": "Django transactions, streaks"
-        },
-        "hours_committed": 35,
-        "blockers": "None",
-        "leave_days": 0,
-        "suggestions": "Better documentation",
-        "is_late": false,
-        "status": "PENDING",
-        "karma_awarded": null,
-        "review_note": null,
-        "created_at": "2026-06-04T10:00:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 5,
-      "totalPages": 1,
-      "isNext": false,
-      "isPrev": false,
-      "nextPage": null
-    }
-  }
-}
-```
-
----
-
-#### `GET /intern/reviews/<review_id>/`
-
-Returns a single weekly review by ID (must belong to the authenticated intern).
-
-**Role:** `Intern`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/reviews/rev-uuid-001/
-Authorization: Bearer <token>
-```
-
-**Sample Response:** Same shape as a single item in the list above.
-
----
-
-#### `POST /intern/reviews/`
-
-Submit a new weekly review. Only active interns can submit.
-
-**Role:** `Intern`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `team` | string | No | Guild/team name |
-| `is_on_leave` | bool | No | Whether intern was on leave this week (default: false) |
-| `hours_committed` | int | Conditional | Required if not on leave (> 0) |
-| `tasks_assigned` | string | No | Tasks assigned this week |
-| `tasks_completed` | string | No | Tasks completed this week |
-| `weekly_review` | string | No | Free-text review |
-| `task_remarks` | object | No | Structured remarks (JSON) |
-| `blockers` | string | No | Any blockers |
-| `leave_days` | int | No | Number of leave days |
-| `suggestions` | string | No | Suggestions for improvement |
-| `week_start_date` | date | No | Defaults to current week's Monday |
-| `rating` | int | No | Self-rating (stored in `task_remarks`) |
-| `next_week_plan` | string | No | Plan for next week |
-| `challenges_faced` | string | No | Challenges during the week |
-| `learnings` | string | No | Key learnings |
-
-**Sample Request:**
-```http
-POST /api/v1/dashboard/intern/reviews/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "team": "CATALYST",
-  "is_on_leave": false,
-  "hours_committed": 35,
-  "tasks_assigned": "Build leave request API, write unit tests",
-  "tasks_completed": "Leave request API complete",
-  "rating": 4,
-  "challenges_faced": "Understanding streak calculation logic",
-  "learnings": "Django atomic transactions, custom permission decorators",
-  "next_week_plan": "Complete timesheet review integration for admin panel",
-  "blockers": "Waiting for design sign-off on leave UI",
-  "suggestions": "Weekly sync calls would help"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Weekly review submitted successfully.",
-  "response": {}
-}
-```
-
-**Error – Duplicate Submission (409):**
-```json
-{
-  "hasError": true,
-  "statusCode": 409,
-  "message": "Review for this week already exists.",
-  "response": {}
-}
-```
-
----
-
-#### `PATCH /intern/reviews/<review_id>/`
-
-Update a pending weekly review (only edits for the current week are allowed).
-
-**Role:** `Intern`
-
-**Request Body:** Partial – any fields from the `POST` body.
-
-**Sample Request:**
-```http
-PATCH /api/v1/dashboard/intern/reviews/rev-uuid-001/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "suggestions": "Add a Slack bot for timesheet reminders",
-  "blockers": "None this week"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Weekly review updated successfully.",
-  "response": {}
-}
-```
-
----
-
-#### `GET /intern/reviews/current/`
-
-Returns this week's review for the authenticated intern.
-
-**Role:** `Intern`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/reviews/current/
-Authorization: Bearer <token>
-```
-
-**Sample Response:** Same shape as a single review object.
-
----
-
-#### `GET /intern/reviews/history/`
-
-Returns paginated review history (same as `GET /intern/reviews/` – dedicated history route).
-
-**Role:** `Intern`
-
----
-
-### 4. Leaderboard
-
-#### `GET /intern/leaderboard/`
-
-Returns the full intern leaderboard sorted by score, paginated.
-
-**Role:** `Intern`, `Admin`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number (default: 1) |
-| `page_size` | int | Results per page (default: 10) |
-
-> **Score Formula:**  
-> `score = (karma × KARMA_MULTIPLIER) + (daily_streak × DAILY_STREAK_MULTIPLIER) + (weekly_streak × WEEKLY_STREAK_MULTIPLIER) + (completed_tasks × COMPLETED_TASKS_MULTIPLIER) + (complexity_score × COMPLEXITY_SCORE_MULTIPLIER)`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/leaderboard/?page=1&page_size=10
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "data": [
-      {
-        "user_id": "usr-uuid-001",
-        "full_name": "Alice Johnson",
-        "guild": "CATALYST",
-        "score": 820.0,
-        "rank": 1
-      },
-      {
-        "user_id": "usr-uuid-002",
-        "full_name": "Bob Smith",
-        "guild": "NEXUS",
-        "score": 710.5,
-        "rank": 2
-      }
-    ],
-    "pagination": {
-      "count": 25,
-      "totalPages": 3,
-      "isNext": true,
-      "isPrev": false,
-      "nextPage": 2
-    }
-  }
-}
-```
-
----
-
-#### `GET /intern/leaderboard/me/`
-
-Returns the authenticated intern's own rank and score on the leaderboard.
-
-**Role:** `Intern`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/leaderboard/me/
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "rank": 5,
-    "score": 472.5
-  }
-}
-```
-
----
-
-### 5. Tasks (Mine)
-
-#### `GET /intern/tasks/mine/`
-
-Returns a paginated list of intern tasks assigned to the authenticated intern.
-
-**Role:** `Intern`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `title`, `status`, `category` |
-| `sortBy` | string | `created_at`, `status` |
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/tasks/mine/?sortBy=status
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "data": [
-      {
-        "id": "task-uuid-001",
-        "title": "Build Leave Request UI",
-        "description": "Create the frontend form for submitting leave requests",
-        "category": "Frontend",
-        "complexity": "MEDIUM",
-        "assigned_to": "usr-uuid-001",
-        "assigned_to_name": "Alice Johnson",
-        "status": "IN_PROGRESS",
-        "created_by": "admin-uuid-001",
-        "created_by_name": "Admin User",
-        "created_at": "2026-05-28T09:00:00Z",
-        "updated_at": "2026-06-03T14:00:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 4,
-      "totalPages": 1,
-      "isNext": false,
-      "isPrev": false,
-      "nextPage": null
-    }
-  }
-}
-```
-
----
-
-#### `PATCH /intern/tasks/<task_id>/`
-
-Update the status of an assigned task.
-
-**Role:** `Intern`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `status` | string | Yes | New status: `PENDING`, `IN_PROGRESS`, `COMPLETED` |
-
-**Sample Request:**
-```http
-PATCH /api/v1/dashboard/intern/tasks/task-uuid-001/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "status": "COMPLETED"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Task status updated successfully.",
-  "response": {}
-}
-```
-
----
-
-### 6. Leave
-
-#### `GET /intern/leave/`
-
-Returns a paginated list of all leave requests submitted by the authenticated intern.
-
-**Role:** `Intern`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `leave_type`, `status` |
-| `sortBy` | string | `created_at`, `status` |
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/leave/
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "data": [
-      {
-        "id": "leave-uuid-001",
-        "leave_type": "SICK",
-        "start_date": "2026-06-05",
-        "end_date": "2026-06-06",
-        "reason": "Fever and cold",
-        "status": "PENDING",
-        "review_note": null,
-        "created_at": "2026-06-04T09:00:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 3,
-      "totalPages": 1,
-      "isNext": false,
-      "isPrev": false,
-      "nextPage": null
-    }
-  }
-}
-```
-
----
-
-#### `GET /intern/leave/<leave_id>/`
-
-Returns a single leave request by ID (must belong to the authenticated intern).
-
-**Role:** `Intern`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/leave/leave-uuid-001/
-Authorization: Bearer <token>
-```
-
-**Sample Response:** Same shape as a single item in the list above.
-
----
-
-#### `POST /intern/leave/`
-
-Submit a new leave request.
-
-**Role:** `Intern`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `leave_type` | string | Yes | `SICK`, `CASUAL`, `WFH`, `EMERGENCY` |
-| `start_date` | date | Yes | Start date of leave |
-| `end_date` | date | Yes | End date of leave (>= start_date) |
-| `reason` | string | Yes | Reason for leave |
-| `duration_days` | int | No | Auto-calculated if omitted |
-
-**Sample Request:**
-```http
-POST /api/v1/dashboard/intern/leave/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "leave_type": "SICK",
-  "start_date": "2026-06-05",
-  "end_date": "2026-06-06",
-  "reason": "Fever and cold, advised rest by doctor"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Leave request submitted successfully.",
-  "response": {}
-}
-```
-
----
-
-#### `PATCH /intern/leave/<leave_id>/`
-
-Cancel a pending leave request.
-
-**Role:** `Intern`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `action` | string | Yes | Must be `"cancel"` |
-
-**Sample Request:**
-```http
-PATCH /api/v1/dashboard/intern/leave/leave-uuid-001/
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "action": "cancel"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Leave request cancelled.",
-  "response": {}
-}
-```
-
----
-
-#### `GET /intern/leave/history/`
-
-Returns the full leave history for the authenticated intern (same as `GET /intern/leave/` – dedicated history route).
-
----
-
-#### `GET /intern/leave/balance/`
-
-Returns the leave balance for the authenticated intern for the current month/week.
-
-**Role:** `Intern`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/leave/balance/
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "SICK": {
-      "limit": 2,
-      "used": 1,
-      "remaining": 1,
-      "period": "month"
-    },
-    "CASUAL": {
-      "limit": 1,
-      "used": 0,
-      "remaining": 1,
-      "period": "month"
-    },
-    "WFH": {
-      "limit": 2,
-      "used": 0,
-      "remaining": 2,
-      "period": "week"
-    },
-    "EMERGENCY": {
-      "limit": null,
-      "used": 0,
-      "remaining": null,
-      "period": "unlimited"
-    }
-  }
-}
-```
-
----
-
-### 7. Guilds
-
-#### `GET /intern/guilds/`
-
-Returns a list of all available intern guilds.
-
-**Role:** `Intern`, `Admin`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/intern/guilds/
-Authorization: Bearer <token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": ["CATALYST", "NEXUS", "VANGUARD", "PHOENIX", "AURORA"]
-}
-```
-
----
-
-## Manage Interns APIs
-
-> All endpoints in this group require **Admin** role.
-
-### 1. Interns Management
-
-#### `GET /manage-interns/interns/`
-
-Returns a paginated list of all interns with their guild and status details.
-
-**Role:** `Admin`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `full_name`, `guild`, `status` |
-| `sortBy` | string | `created_at`, `status` |
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/manage-interns/interns/?page=1&sortBy=status
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "data": [
-      {
-        "id": "guild-link-uuid-001",
-        "user": "usr-uuid-001",
-        "full_name": "Alice Johnson",
-        "muid": "alice@mulearn",
-        "guild": "CATALYST",
-        "status": "ACTIVE",
-        "created_at": "2026-05-01T09:00:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 30,
-      "totalPages": 3,
-      "isNext": true,
-      "isPrev": false,
-      "nextPage": 2
-    }
-  }
-}
-```
-
----
-
-#### `GET /manage-interns/interns/<intern_id>/`
-
-Returns details of a specific intern by their guild-link ID.
-
-**Role:** `Admin`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/manage-interns/interns/guild-link-uuid-001/
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response:** Same shape as a single item in the list above.
-
----
-
-#### `POST /manage-interns/interns/`
-
-Onboard a new intern. Automatically assigns the `Intern` role to the user.
-
-**Role:** `Admin`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `mu_id` | string | Conditional | User's MuLearn ID (muid). Use this or `user_id` |
-| `user_id` | uuid | Conditional | User's UUID. Use this or `mu_id` |
-| `guild` | string | Yes | Guild to assign: `CATALYST`, `NEXUS`, `VANGUARD`, etc. |
-| `status` | string | No | Default: `ACTIVE` |
-
-**Sample Request:**
-```http
-POST /api/v1/dashboard/manage-interns/interns/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "mu_id": "alice@mulearn",
-  "guild": "CATALYST"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Intern onboarded successfully.",
-  "response": {}
-}
-```
-
----
-
-#### `PATCH /manage-interns/interns/<intern_id>/`
-
-Update an intern's guild or status.
-
-**Role:** `Admin`
-
-**Request Body (partial):**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `guild` | string | New guild assignment |
-| `status` | string | `ACTIVE`, `AT_RISK`, `ON_LEAVE`, `INACTIVE` |
-
-**Sample Request:**
-```http
-PATCH /api/v1/dashboard/manage-interns/interns/guild-link-uuid-001/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "guild": "NEXUS",
-  "status": "ACTIVE"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Intern details updated successfully.",
-  "response": {}
-}
-```
-
----
-
-#### `DELETE /manage-interns/interns/<intern_id>/`
-
-Deactivates an intern (sets status to `INACTIVE`) and removes their `Intern` role.
-
-**Role:** `Admin`
-
-**Sample Request:**
-```http
-DELETE /api/v1/dashboard/manage-interns/interns/guild-link-uuid-001/
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Intern deactivated successfully.",
-  "response": {}
-}
-```
-
----
-
-### 2. Status Stats
-
-#### `GET /manage-interns/status/`
-
-Returns a breakdown of intern counts by status.
-
-**Role:** `Admin`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/manage-interns/status/
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "ACTIVE": 22,
-    "AT_RISK": 3,
-    "ON_LEAVE": 1,
-    "INACTIVE": 4
-  }
-}
-```
-
----
-
-### 3. Export Interns
-
-#### `GET /manage-interns/interns/export/`
-
-Downloads all intern records as a CSV file.
-
-**Role:** `Admin`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/manage-interns/interns/export/
-Authorization: Bearer <admin-token>
-```
-
-**Response:** `text/csv` file with `Content-Disposition: attachment; filename="interns.csv"`
-
-**CSV Columns:**
-
-| Column | Description |
-|--------|-------------|
-| `Full Name` | Intern's full name |
-| `MuID` | Intern's mulearn ID |
-| `Guild` | Assigned guild |
-| `Status` | Current status |
-| `Created At` | Onboarding date (YYYY-MM-DD HH:MM:SS) |
-
----
-
-### 4. Reviews & Timesheets (Admin)
-
-#### `GET /manage-interns/reviews/`
-
-Returns a paginated list of all weekly review submissions across all interns.
-
-**Role:** `Admin`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `status` | string | Filter by status: `PENDING`, `APPROVED`, `REJECTED` |
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `user__full_name`, `status`, `team` |
-| `sortBy` | string | `created_at`, `status` |
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/manage-interns/reviews/?status=PENDING&page=1
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "data": [
-      {
-        "id": "rev-uuid-001",
-        "user_id": "usr-uuid-001",
-        "user_name": "Alice Johnson",
-        "muid": "alice@mulearn",
-        "iso_year": 2026,
-        "iso_week": 23,
-        "week_start_date": "2026-06-01",
-        "week_end_date": "2026-06-07",
-        "team": "CATALYST",
-        "is_on_leave": false,
-        "tasks_assigned": "Build leave API",
-        "tasks_completed": "Leave API complete",
-        "weekly_review": "Great week",
-        "task_remarks": { "rating": 4 },
-        "hours_committed": 35,
-        "blockers": "None",
-        "leave_days": 0,
-        "suggestions": null,
-        "is_late": false,
-        "status": "PENDING",
-        "karma_awarded": null,
-        "review_note": null,
-        "created_at": "2026-06-04T10:00:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 8,
-      "totalPages": 1,
-      "isNext": false,
-      "isPrev": false,
-      "nextPage": null
-    }
-  }
-}
-```
-
----
-
-#### `GET /manage-interns/reviews/reviews/<review_id>/review/`
-
-Returns a specific weekly review for admin inspection.
-
-**Role:** `Admin`
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/manage-interns/reviews/reviews/rev-uuid-001/review/
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response:** Same shape as single item in the list above.
-
----
-
-#### `PATCH /manage-interns/reviews/reviews/<review_id>/review/`
-
-Approve or reject a pending weekly review. Approving awards karma and updates the streak.
-
-**Role:** `Admin`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `action` | string | Yes | `"approve"` or `"reject"` |
-| `review_note` | string | No | Admin's note (mandatory for rejection best practice) |
-
-**Sample Request – Approve:**
-```http
-PATCH /api/v1/dashboard/manage-interns/reviews/reviews/rev-uuid-001/review/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "action": "approve"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Weekly review approved successfully.",
-  "response": {}
-}
-```
-
-**Sample Request – Reject:**
-```http
-PATCH /api/v1/dashboard/manage-interns/reviews/reviews/rev-uuid-001/review/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "action": "reject",
-  "review_note": "Review is incomplete. Please add tasks completed and hours committed."
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Weekly review rejected successfully.",
-  "response": {}
-}
-```
-
----
-
-#### `GET /manage-interns/reviews/timesheets/`
-
-Returns a paginated list of all daily timesheet submissions across all interns.
-
-**Role:** `Admin`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `status` | string | Filter by status: `PENDING`, `APPROVED`, `REJECTED` |
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `user__full_name`, `status`, `category` |
-| `sortBy` | string | `created_at`, `status` |
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/manage-interns/reviews/timesheets/?status=PENDING
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
-  "response": {
-    "data": [
-      {
-        "id": "ts-uuid-001",
-        "user_id": "usr-uuid-001",
-        "user_name": "Alice Johnson",
-        "muid": "alice@mulearn",
-        "entry_date": "2026-06-03",
-        "task_id": "task-uuid-001",
-        "category": "Development",
-        "description": "Worked on leave request form",
-        "hours": "7.50",
-        "blockers": "None",
-        "task_status": "IN_PROGRESS",
-        "remark": null,
-        "end_of_day_note": "70% done",
-        "edit_reason": null,
-        "status": "PENDING",
-        "karma_awarded": null,
-        "review_note": null,
-        "created_at": "2026-06-03T18:00:00Z"
+        "created_at": "2024-06-03T18:45:00Z"
       }
     ],
     "pagination": {
@@ -1546,290 +214,247 @@ Authorization: Bearer <admin-token>
 
 ---
 
-#### `GET /manage-interns/reviews/timesheets/<timesheet_id>/review/`
+### 2.2 `GET /timesheets/<timesheet_id>/`
 
-Returns a specific timesheet for admin inspection.
+Retrieve a single timesheet entry by ID.
 
-**Role:** `Admin`
-
-**Sample Request:**
+**Request**
 ```http
-GET /api/v1/dashboard/manage-interns/reviews/timesheets/ts-uuid-001/review/
-Authorization: Bearer <admin-token>
+GET /api/v1/dashboard/intern/timesheets/ts-uuid-0001/
+Authorization: Bearer <token>
 ```
 
-**Sample Response:** Same shape as single timesheet item above.
+**Response `200 OK`**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Successful",
+  "response": {
+    "id": "ts-uuid-0001",
+    "entry_date": "2024-06-03",
+    "task_id": "task-uuid-0099",
+    "category": "DEVELOPMENT",
+    "description": "Worked on the authentication module",
+    "hours": "6.50",
+    "blockers": "None",
+    "task_status": "IN_PROGRESS",
+    "remark": null,
+    "end_of_day_note": "Completed JWT integration",
+    "edit_reason": null,
+    "status": "PENDING",
+    "karma_awarded": null,
+    "review_note": null,
+    "created_at": "2024-06-03T18:45:00Z"
+  }
+}
+```
+
+**Error `400`** — not found
+```json
+{ "hasError": true, "statusCode": 400, "message": "Timesheet not found." }
+```
 
 ---
 
-#### `PATCH /manage-interns/reviews/timesheets/<timesheet_id>/review/`
+### 2.3 `POST /timesheets/`
 
-Approve or reject a pending daily timesheet. Approving awards karma, updates streak, and may trigger milestone bonuses.
+Submit a new daily timesheet entry. Only one entry per date is allowed.
 
-**Role:** `Admin`
+**Request**
+```http
+POST /api/v1/dashboard/intern/timesheets/
+Authorization: Bearer <token>
+Content-Type: application/json
+```
 
-**Request Body:**
+```json
+{
+  "entry_date": "2024-06-04",
+  "category": "DEVELOPMENT",
+  "description": "Implemented leave management API endpoints",
+  "hours": "7.00",
+  "blockers": "None",
+  "end_of_day_note": "All endpoints tested and working"
+}
+```
+
+**With a linked task:**
+```json
+{
+  "entry_date": "2024-06-04",
+  "category": "DEVELOPMENT",
+  "task": "task-uuid-0099",
+  "task_status": "COMPLETED",
+  "description": "Completed the assigned task on leave module",
+  "hours": "5.50",
+  "blockers": "None"
+}
+```
+
+**Fields**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `action` | string | Yes | `"approve"` or `"reject"` |
-| `review_note` | string | No | Admin's feedback note |
+| `entry_date` | date (`YYYY-MM-DD`) | ✅ | Must not be a future date. Dates older than yesterday require `edit_reason`. |
+| `category` | string | ✅ | Work category (e.g. `DEVELOPMENT`, `DESIGN`, `TESTING`) |
+| `description` | string | ✅ | Description of work done (alias: `log_description`) |
+| `hours` | decimal | ✅ | Hours worked, must be `> 0` (alias: `hours_worked`) |
+| `blockers` | string | ❌ | Any blockers encountered |
+| `task` | UUID | ❌ | Linked intern task ID |
+| `task_status` | string | ❌ (required if `task` is set) | New status for the linked task |
+| `end_of_day_note` | string | ❌ | End-of-day summary |
+| `edit_reason` | string | ❌ (required for late submissions) | Reason for late entry |
 
-**Karma Streak Multipliers (on approval):**
-
-| Streak Days | Karma Multiplier |
-|-------------|-----------------|
-| < 7 | 1.0× |
-| ≥ 7 | 1.2× |
-| ≥ 14 | 1.5× |
-| ≥ 30 | 2.0× |
-
-**Milestone Streak Bonuses:** Additional karma is awarded at streaks of 7, 14, 30, 60, and 90 days.
-
-**Sample Request:**
-```http
-PATCH /api/v1/dashboard/manage-interns/reviews/timesheets/ts-uuid-001/review/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "action": "approve"
-}
+**Response `200 OK`**
+```json
+{ "hasError": false, "statusCode": 200, "message": "Timesheet submitted successfully." }
 ```
 
-**Sample Response (200 OK):**
+**Error `409 Conflict`** — duplicate entry for date
 ```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Timesheet approved successfully.",
-  "response": {}
-}
+{ "hasError": true, "statusCode": 409, "message": "Timesheet for this date already exists." }
 ```
 
 ---
 
-### 5. Tasks (Admin)
+### 2.4 `PATCH /timesheets/<timesheet_id>/`
 
-#### `GET /manage-interns/tasks/`
+Edit the `remark` or `end_of_day_note` of an existing timesheet. `edit_reason` is mandatory.
 
-Returns a paginated list of all intern tasks.
-
-**Role:** `Admin`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `title`, `status`, `category`, `assigned_to__full_name` |
-| `sortBy` | string | `created_at`, `status` |
-
-**Sample Request:**
+**Request**
 ```http
-GET /api/v1/dashboard/manage-interns/tasks/?sortBy=created_at
-Authorization: Bearer <admin-token>
+PATCH /api/v1/dashboard/intern/timesheets/ts-uuid-0001/
+Authorization: Bearer <token>
+Content-Type: application/json
 ```
 
-**Sample Response (200 OK):**
+```json
+{
+  "remark": "Reviewed by senior dev — all good",
+  "end_of_day_note": "Also fixed a bug in the auth flow",
+  "edit_reason": "Forgot to add EOD note earlier"
+}
+```
+
+**Response `200 OK`**
+```json
+{ "hasError": false, "statusCode": 200, "message": "Timesheet updated successfully." }
+```
+
+**Error `400`** — no edit_reason provided
+```json
+{ "hasError": true, "statusCode": 400, "message": "edit_reason is mandatory for modifications." }
+```
+
+---
+
+### 2.5 `GET /timesheets/today/`
+
+Retrieve today's timesheet entry for the authenticated intern.
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/timesheets/today/
+Authorization: Bearer <token>
+```
+
+**Response `200 OK`** — same shape as single timesheet response.
+
+**Error `400`** — no entry today
+```json
+{ "hasError": true, "statusCode": 400, "message": "No timesheet submitted for today." }
+```
+
+---
+
+### 2.6 `GET /timesheets/history/`
+
+Retrieve paginated timesheet history (sorted by entry date descending).
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/timesheets/history/?page=1&perPage=20
+Authorization: Bearer <token>
+```
+
+**Response** — same paginated shape as `GET /timesheets/`
+
+---
+
+### 2.7 `GET /timesheets/summary/`
+
+Retrieve intern streak statistics for daily timesheet submissions.
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/timesheets/summary/
+Authorization: Bearer <token>
+```
+
+**Response `200 OK`**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Success",
+  "message": "Successful",
   "response": {
-    "data": [
-      {
-        "id": "task-uuid-001",
-        "title": "Build Leave Request UI",
-        "description": "Create the leave request form",
-        "category": "Frontend",
-        "complexity": "MEDIUM",
-        "assigned_to": "usr-uuid-001",
-        "status": "IN_PROGRESS",
-        "team": "CATALYST",
-        "deadline": "2026-06-10",
-        "iso_week": 24,
-        "created_at": "2026-05-28T09:00:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 12,
-      "totalPages": 2,
-      "isNext": true,
-      "isPrev": false,
-      "nextPage": 2
-    }
+    "current_streak": 12,
+    "longest_streak": 18
   }
 }
 ```
 
 ---
 
-#### `GET /manage-interns/tasks/<task_id>/`
+## 3. Weekly Reviews
 
-Returns a specific task by ID.
+Base path: `/api/v1/dashboard/intern/reviews/`
 
-**Role:** `Admin`
+### 3.1 `GET /reviews/`
 
-**Sample Request:**
+Retrieve all weekly reviews for the authenticated intern (paginated, latest first).
+
+**Request**
 ```http
-GET /api/v1/dashboard/manage-interns/tasks/task-uuid-001/
-Authorization: Bearer <admin-token>
+GET /api/v1/dashboard/intern/reviews/?page=1&perPage=10
+Authorization: Bearer <token>
 ```
 
-**Sample Response:** Same shape as a single task item above.
-
----
-
-#### `POST /manage-interns/tasks/`
-
-Create a new intern task and assign it to an intern.
-
-**Role:** `Admin`
-
-**Request Body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `title` | string | Yes | Task title |
-| `description` | string | No | Task description |
-| `category` | string | No | Task category |
-| `complexity` | string | No | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
-| `assigned_to` | string | Yes | Intern's `muid` or `user_id` |
-| `status` | string | No | Default: `PENDING` |
-| `team` / `guild` | string | No | Guild name (alias: `guild`) |
-| `deadline` | date | No | Task deadline |
-| `iso_week` | int | No | Auto-calculated from deadline if omitted |
-
-**Sample Request:**
-```http
-POST /api/v1/dashboard/manage-interns/tasks/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "title": "Build Leave Request UI",
-  "description": "Create the frontend form for submitting leave requests with validation",
-  "category": "Frontend",
-  "complexity": "MEDIUM",
-  "assigned_to": "alice@mulearn",
-  "guild": "CATALYST",
-  "deadline": "2026-06-10"
-}
-```
-
-**Sample Response (200 OK):**
+**Response `200 OK`**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Task created successfully.",
-  "response": {}
-}
-```
-
----
-
-#### `PATCH /manage-interns/tasks/<task_id>/`
-
-Update an existing intern task.
-
-**Role:** `Admin`
-
-**Request Body (partial):** Any fields from `POST /manage-interns/tasks/`
-
-**Sample Request:**
-```http
-PATCH /api/v1/dashboard/manage-interns/tasks/task-uuid-001/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "status": "COMPLETED",
-  "complexity": "HIGH"
-}
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Task updated successfully.",
-  "response": {}
-}
-```
-
----
-
-#### `DELETE /manage-interns/tasks/<task_id>/`
-
-Permanently deletes an intern task.
-
-**Role:** `Admin`
-
-**Sample Request:**
-```http
-DELETE /api/v1/dashboard/manage-interns/tasks/task-uuid-001/
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Task deleted successfully.",
-  "response": {}
-}
-```
-
----
-
-### 6. Leave (Admin)
-
-#### `GET /manage-interns/leave/`
-
-Returns a paginated list of all leave requests from all interns.
-
-**Role:** `Admin`
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `page` | int | Page number |
-| `page_size` | int | Results per page |
-| `search` | string | Filter by `user__full_name`, `leave_type`, `status` |
-| `sortBy` | string | `created_at`, `status` |
-
-**Sample Request:**
-```http
-GET /api/v1/dashboard/manage-interns/leave/?sortBy=created_at
-Authorization: Bearer <admin-token>
-```
-
-**Sample Response (200 OK):**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Success",
+  "message": "Successful",
   "response": {
     "data": [
       {
-        "id": "leave-uuid-001",
-        "user": "usr-uuid-001",
-        "user_name": "Alice Johnson",
-        "leave_type": "SICK",
-        "start_date": "2026-06-05",
-        "end_date": "2026-06-06",
-        "reason": "Fever and cold",
+        "id": "rev-uuid-0001",
+        "iso_year": 2024,
+        "iso_week": 23,
+        "week_start_date": "2024-06-03",
+        "week_end_date": "2024-06-09",
+        "team": "Backend",
+        "is_on_leave": false,
+        "tasks_assigned": "Complete leave API, fix auth bug",
+        "tasks_completed": "Leave API done, auth bug fixed",
+        "weekly_review": "Learnings: Improved understanding of JWT. Challenges Faced: Complex edge cases in date logic.",
+        "task_remarks": {
+          "rating": 4,
+          "next_week_plan": "Start timesheet module",
+          "challenges_faced": "Complex edge cases in date logic",
+          "learnings": "Improved understanding of JWT"
+        },
+        "hours_committed": 35,
+        "blockers": "None this week",
+        "leave_days": 0,
+        "suggestions": null,
+        "is_late": false,
         "status": "PENDING",
+        "karma_awarded": null,
         "review_note": null,
-        "created_at": "2026-06-04T09:00:00Z"
+        "created_at": "2024-06-07T17:00:00Z"
       }
     ],
     "pagination": {
@@ -1845,144 +470,668 @@ Authorization: Bearer <admin-token>
 
 ---
 
-#### `PATCH /manage-interns/leave/<leave_id>/review/`
+### 3.2 `GET /reviews/<review_id>/`
 
-Approve or reject a pending leave request. If approved and the leave period includes today, the intern's status is automatically set to `ON_LEAVE`.
+Retrieve a single weekly review by ID.
 
-**Role:** `Admin`
+**Request**
+```http
+GET /api/v1/dashboard/intern/reviews/rev-uuid-0001/
+Authorization: Bearer <token>
+```
 
-**Request Body:**
+**Response `200 OK`** — same shape as a single item in the list above.
+
+**Error `400`**
+```json
+{ "hasError": true, "statusCode": 400, "message": "Weekly review not found." }
+```
+
+---
+
+### 3.3 `POST /reviews/`
+
+Submit a new weekly review. Only one review is allowed per ISO week.
+
+**Request**
+```http
+POST /api/v1/dashboard/intern/reviews/
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Standard submission (not on leave):**
+```json
+{
+  "team": "Backend",
+  "is_on_leave": false,
+  "tasks_assigned": "Implement leave API, write unit tests",
+  "tasks_completed": "Leave API complete, tests written",
+  "hours_committed": 35,
+  "blockers": "None",
+  "leave_days": 0,
+  "suggestions": "Add more intern onboarding docs",
+  "rating": 4,
+  "learnings": "Deep dive into Django ORM aggregations",
+  "challenges_faced": "Debugging timezone-aware date comparisons",
+  "next_week_plan": "Start timesheet module"
+}
+```
+
+**On-leave submission:**
+```json
+{
+  "team": "Backend",
+  "is_on_leave": true,
+  "leave_days": 4,
+  "hours_committed": 0,
+  "blockers": null
+}
+```
+
+**Fields**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `action` | string | Yes | `"approve"` or `"reject"` |
-| `review_note` | string | No | Admin's feedback note |
+| `team` | string | ✅ | The intern's team name |
+| `is_on_leave` | boolean | ✅ | Whether the intern was on leave this week |
+| `hours_committed` | int | ✅ (if not on leave) | Hours worked this week, must be `> 0` |
+| `tasks_assigned` | string | ❌ | Tasks assigned during the week |
+| `tasks_completed` | string | ❌ | Tasks completed during the week |
+| `weekly_review` | string | ❌ | Free-form review text (auto-generated if omitted) |
+| `blockers` | string | ❌ | Any blockers |
+| `leave_days` | int | ❌ | Number of days on leave |
+| `suggestions` | string | ❌ | Suggestions or feedback |
+| `rating` | int | ❌ | Self-rating (stored in `task_remarks`) |
+| `learnings` | string | ❌ | Key learnings (stored in `task_remarks`) |
+| `challenges_faced` | string | ❌ | Challenges faced (stored in `task_remarks`) |
+| `next_week_plan` | string | ❌ | Plan for next week (stored in `task_remarks`) |
+| `week_start_date` | date | ❌ | Defaults to current week's Monday |
 
-**Sample Request – Approve:**
-```http
-PATCH /api/v1/dashboard/manage-interns/leave/leave-uuid-001/review/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "action": "approve"
-}
-```
-
-**Sample Response (200 OK):**
+**Response `200 OK`**
 ```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Leave request approved successfully.",
-  "response": {}
-}
+{ "hasError": false, "statusCode": 200, "message": "Weekly review submitted successfully." }
 ```
 
-**Sample Request – Reject:**
-```http
-PATCH /api/v1/dashboard/manage-interns/leave/leave-uuid-001/review/
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-
-{
-  "action": "reject",
-  "review_note": "Leave quota exhausted for this month."
-}
-```
-
-**Sample Response (200 OK):**
+**Error `409 Conflict`** — review already exists for this week
 ```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Leave request rejected successfully.",
-  "response": {}
-}
+{ "hasError": true, "statusCode": 409, "message": "Review for this week already exists." }
 ```
 
 ---
 
-## Common Query Parameters
+### 3.4 `PATCH /reviews/<review_id>/`
 
-All paginated list endpoints support:
+Edit a pending review, but **only for the current ISO week**.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | int | 1 | Page number |
-| `page_size` | int | 10 | Items per page |
-| `search` | string | — | Search term (fields vary per endpoint) |
-| `sortBy` | string | — | Field to sort by |
+**Request**
+```http
+PATCH /api/v1/dashboard/intern/reviews/rev-uuid-0001/
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "blockers": "Encountered a DB migration conflict",
+  "suggestions": "Need better local dev setup docs",
+  "rating": 5
+}
+```
+
+**Response `200 OK`**
+```json
+{ "hasError": false, "statusCode": 200, "message": "Weekly review updated successfully." }
+```
+
+**Error `400`** — wrong week or not pending
+```json
+{ "hasError": true, "statusCode": 400, "message": "Cannot edit reviews for past weeks." }
+```
 
 ---
 
-## Common Response Format
+### 3.5 `GET /reviews/current/`
 
-All responses follow this wrapper shape:
+Retrieve the current week's submitted review.
 
+**Request**
+```http
+GET /api/v1/dashboard/intern/reviews/current/
+Authorization: Bearer <token>
+```
+
+**Response `200 OK`** — same shape as a single review.
+
+**Error `400`**
+```json
+{ "hasError": true, "statusCode": 400, "message": "No review submitted for the current week." }
+```
+
+---
+
+### 3.6 `GET /reviews/history/`
+
+Retrieve paginated review history (sorted by year and week descending).
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/reviews/history/?page=1&perPage=10
+Authorization: Bearer <token>
+```
+
+**Response** — same paginated shape as `GET /reviews/`
+
+---
+
+## 4. Tasks
+
+Base path: `/api/v1/dashboard/intern/tasks/`
+
+### 4.1 `GET /tasks/mine/`
+
+Retrieve all tasks assigned to the authenticated intern.
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/tasks/mine/?page=1&perPage=10
+Authorization: Bearer <token>
+```
+
+**Query Parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `search` | string | Search by `title`, `status`, or `category` |
+| `sortBy` | string | `created_at` (default) or `status` |
+| `sortOrder` | string | `asc` / `desc` |
+
+**Response `200 OK`**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": "Success",
-  "response": { ... }
-}
-```
-
-**Error Response:**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": "Error message here.",
+  "message": "Successful",
   "response": {
-    "field_name": ["Validation error detail"]
+    "data": [
+      {
+        "id": "task-uuid-0099",
+        "title": "Build leave management API",
+        "description": "Create CRUD endpoints for intern leave requests",
+        "category": "DEVELOPMENT",
+        "complexity": "HIGH",
+        "assigned_to": "user-uuid-intern-001",
+        "assigned_to_name": "Arun Dev",
+        "status": "IN_PROGRESS",
+        "created_by": "user-uuid-mentor-001",
+        "created_by_name": "Priya Mentor",
+        "created_at": "2024-05-28T10:00:00Z",
+        "updated_at": "2024-06-03T14:30:00Z"
+      }
+    ],
+    "pagination": {
+      "count": 4,
+      "totalPages": 1,
+      "isNext": false,
+      "isPrev": false,
+      "nextPage": null
+    }
   }
 }
 ```
 
 ---
 
-## Enumerations
+### 4.2 `PATCH /tasks/<task_id>/`
 
-### Intern Status (`InternGuildStatus`)
-| Value | Description |
-|-------|-------------|
-| `ACTIVE` | Intern is actively participating |
-| `AT_RISK` | Intern has missed submissions |
-| `ON_LEAVE` | Intern is on approved leave |
-| `INACTIVE` | Intern has been deactivated |
+Update the status of a specific assigned task.
 
-### Submission Status (`InternSubmissionStatus`)
-| Value | Description |
-|-------|-------------|
-| `PENDING` | Awaiting admin review |
-| `APPROVED` | Approved by admin |
-| `REJECTED` | Rejected by admin |
+**Request**
+```http
+PATCH /api/v1/dashboard/intern/tasks/task-uuid-0099/
+Authorization: Bearer <token>
+Content-Type: application/json
+```
 
-### Leave Type
-| Value | Period Limit | Description |
-|-------|-------------|-------------|
-| `SICK` | 2 days/month | Medical leave |
-| `CASUAL` | 1 day/month | Casual leave |
-| `WFH` | 2 days/week | Work from home |
-| `EMERGENCY` | Unlimited | Emergency leave |
+```json
+{
+  "status": "COMPLETED"
+}
+```
 
-### Task Status
-| Value | Description |
-|-------|-------------|
-| `PENDING` | Not started |
-| `IN_PROGRESS` | Actively being worked on |
-| `COMPLETED` | Finished |
+**Valid status values:** `TODO`, `IN_PROGRESS`, `COMPLETED`, `ON_HOLD`
 
-### Task Complexity & Score Weights
-| Complexity | Score Weight |
-|------------|-------------|
-| `LOW` | 1 |
-| `MEDIUM` | 2 |
-| `HIGH` | 3 |
-| `CRITICAL` | 5 |
+**Response `200 OK`**
+```json
+{ "hasError": false, "statusCode": 200, "message": "Task status updated successfully." }
+```
+
+**Error `400`** — task not found
+```json
+{ "hasError": true, "statusCode": 400, "message": "Task not found." }
+```
+
+**Error `400`** — status missing
+```json
+{ "hasError": true, "statusCode": 400, "message": "Status is required." }
+```
 
 ---
 
-*Generated from source code at `api/dashboard/intern/` and `api/dashboard/manage_interns/`*
+## 5. Leave Management
+
+Base path: `/api/v1/dashboard/intern/leave/`
+
+### 5.1 `GET /leave/`
+
+Retrieve a paginated list of all the intern's leave requests.
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/leave/?page=1&perPage=10
+Authorization: Bearer <token>
+```
+
+**Response `200 OK`**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "id": "leave-uuid-0001",
+        "leave_type": "SICK",
+        "start_date": "2024-06-10",
+        "end_date": "2024-06-11",
+        "reason": "Fever and cold",
+        "status": "PENDING",
+        "review_note": null,
+        "created_at": "2024-06-09T08:00:00Z"
+      }
+    ],
+    "pagination": {
+      "count": 3,
+      "totalPages": 1,
+      "isNext": false,
+      "isPrev": false,
+      "nextPage": null
+    }
+  }
+}
+```
+
+---
+
+### 5.2 `GET /leave/<leave_id>/`
+
+Retrieve a single leave request by ID.
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/leave/leave-uuid-0001/
+Authorization: Bearer <token>
+```
+
+**Response `200 OK`**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Successful",
+  "response": {
+    "id": "leave-uuid-0001",
+    "leave_type": "SICK",
+    "start_date": "2024-06-10",
+    "end_date": "2024-06-11",
+    "reason": "Fever and cold",
+    "status": "PENDING",
+    "review_note": null,
+    "created_at": "2024-06-09T08:00:00Z"
+  }
+}
+```
+
+---
+
+### 5.3 `POST /leave/`
+
+Submit a new leave request.
+
+**Request**
+```http
+POST /api/v1/dashboard/intern/leave/
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "leave_type": "SICK",
+  "start_date": "2024-06-10",
+  "end_date": "2024-06-11",
+  "reason": "High fever, doctor advised rest"
+}
+```
+
+**Leave types**
+
+| Type | Period Limit | Description |
+|------|-------------|-------------|
+| `SICK` | 2 days / month | Sick leave |
+| `CASUAL` | 1 day / month | Casual/personal leave |
+| `WFH` | 2 days / week | Work from home |
+| `EMERGENCY` | Unlimited | Emergency leave |
+
+**Fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `leave_type` | string | ✅ | One of `SICK`, `CASUAL`, `WFH`, `EMERGENCY` |
+| `start_date` | date (`YYYY-MM-DD`) | ✅ | Leave start date |
+| `end_date` | date (`YYYY-MM-DD`) | ✅ | Leave end date (must be ≥ `start_date`) |
+| `reason` | string | ✅ | Reason for leave |
+| `duration_days` | int | ❌ | Auto-calculated if omitted |
+
+**Response `200 OK`**
+```json
+{ "hasError": false, "statusCode": 200, "message": "Leave request submitted successfully." }
+```
+
+**Error `400`** — validation failure
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": { "start_date": ["Start date must be before or equal to end date."] }
+}
+```
+
+---
+
+### 5.4 `PATCH /leave/<leave_id>/` — Cancel Leave
+
+Cancel a pending leave request.
+
+**Request**
+```http
+PATCH /api/v1/dashboard/intern/leave/leave-uuid-0001/
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "action": "cancel"
+}
+```
+
+**Response `200 OK`**
+```json
+{ "hasError": false, "statusCode": 200, "message": "Leave request cancelled." }
+```
+
+**Error `400`** — not found or not in PENDING state
+```json
+{ "hasError": true, "statusCode": 400, "message": "Pending leave request not found." }
+```
+
+**Error `400`** — invalid action
+```json
+{ "hasError": true, "statusCode": 400, "message": "Invalid action." }
+```
+
+---
+
+### 5.5 `GET /leave/history/`
+
+Retrieve paginated leave history (same response as `GET /leave/`).
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/leave/history/?page=1&perPage=10
+Authorization: Bearer <token>
+```
+
+---
+
+### 5.6 `GET /leave/balance/`
+
+Retrieve the intern's leave balance for each leave type.
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/leave/balance/
+Authorization: Bearer <token>
+```
+
+**Response `200 OK`**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Successful",
+  "response": {
+    "SICK": {
+      "limit": 2,
+      "used": 1,
+      "remaining": 1,
+      "period": "month"
+    },
+    "CASUAL": {
+      "limit": 1,
+      "used": 0,
+      "remaining": 1,
+      "period": "month"
+    },
+    "WFH": {
+      "limit": 2,
+      "used": 2,
+      "remaining": 0,
+      "period": "week"
+    },
+    "EMERGENCY": {
+      "limit": null,
+      "used": 1,
+      "remaining": null,
+      "period": "unlimited"
+    }
+  }
+}
+```
+
+---
+
+## 6. Leaderboard
+
+Base path: `/api/v1/dashboard/intern/leaderboard/`
+
+**Roles:** Both `INTERN` and `ADMIN` can access the full leaderboard. Only `INTERN` can access the `me/` endpoint.
+
+### 6.1 `GET /leaderboard/`
+
+Retrieve the full paginated intern leaderboard, sorted by score (descending).
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/leaderboard/?page=1&page_size=10
+Authorization: Bearer <token>
+```
+
+**Query Parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | int | `1` | Page number |
+| `page_size` | int | `10` | Items per page |
+
+**Response `200 OK`**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "user_id": "a1b2c3d4-0000-0000-0000-000000000001",
+        "full_name": "Arjun Nair",
+        "guild": "BACKEND",
+        "score": 2100.0,
+        "rank": 1
+      },
+      {
+        "user_id": "a1b2c3d4-0000-0000-0000-000000000002",
+        "full_name": "Meera Pillai",
+        "guild": "DESIGN",
+        "score": 1850.0,
+        "rank": 2
+      }
+    ],
+    "pagination": {
+      "count": 12,
+      "totalPages": 2,
+      "isNext": true,
+      "isPrev": false,
+      "nextPage": 2
+    }
+  }
+}
+```
+
+**Score Formula:**
+```
+score = (karma × KARMA_MULTIPLIER)
+      + (daily_streak × DAILY_STREAK_MULTIPLIER)
+      + (weekly_streak × WEEKLY_STREAK_MULTIPLIER)
+      + (completed_tasks × COMPLETED_TASKS_MULTIPLIER)
+      + (complexity_score × COMPLEXITY_SCORE_MULTIPLIER)
+```
+
+**Complexity score mapping:** `LOW=1`, `MEDIUM=2`, `HIGH=3`, `CRITICAL=5`
+
+---
+
+### 6.2 `GET /leaderboard/me/`
+
+Retrieve the authenticated intern's own rank and score on the leaderboard.
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/leaderboard/me/
+Authorization: Bearer <token>
+```
+
+**Response `200 OK`**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Successful",
+  "response": {
+    "rank": 4,
+    "score": 1420.0
+  }
+}
+```
+
+**Error `400`**
+```json
+{ "hasError": true, "statusCode": 400, "message": "Not found in leaderboard." }
+```
+
+> Note: Only `ACTIVE` and `AT_RISK` interns appear in the leaderboard. `INACTIVE` interns will receive the not-found error.
+
+---
+
+## 7. Guilds
+
+Base path: `/api/v1/dashboard/intern/`
+
+### 7.1 `GET /guilds/`
+
+Retrieve all available intern guild names.
+
+**Roles:** `INTERN` or `ADMIN`
+
+**Request**
+```http
+GET /api/v1/dashboard/intern/guilds/
+Authorization: Bearer <token>
+```
+
+**Response `200 OK`**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Successful",
+  "response": ["BACKEND", "FRONTEND", "DESIGN", "DEVOPS", "DATA", "QA"]
+}
+```
+
+---
+
+## 8. Common Patterns
+
+### Authentication Header
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Pagination Query Parameters
+
+All paginated list endpoints accept:
+
+| Parameter | Description |
+|-----------|-------------|
+| `page` | Page number (default: `1`) |
+| `perPage` | Items per page (default: `10`) |
+| `search` | Search string |
+| `sortBy` | Field to sort by |
+| `sortOrder` | `asc` or `desc` (default: `desc`) |
+
+### Standard Success Response
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": "Successful",
+  "response": { ... }
+}
+```
+
+### Standard Error Response
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": "Human readable error message."
+}
+```
+
+### Leave & Review Statuses
+
+| Status | Description |
+|--------|-------------|
+| `PENDING` | Submitted, awaiting mentor review |
+| `APPROVED` | Approved by mentor |
+| `REJECTED` | Rejected by mentor |
+| `CANCELLED` | Cancelled by intern |
+
+### Intern Status Values
+
+| Status | Description |
+|--------|-------------|
+| `ACTIVE` | Active intern |
+| `AT_RISK` | Intern flagged as at risk |
+| `INACTIVE` | Inactive/offboarded intern |
+
+### Timesheet / Review Submission Status
+
+| Status | Description |
+|--------|-------------|
+| `PENDING` | Submitted, awaiting mentor review |
+| `APPROVED` | Approved and karma awarded |
+| `REJECTED` | Rejected by mentor |
