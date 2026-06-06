@@ -1883,49 +1883,276 @@
 }
 ```
 
+### **1. Company Dashboard Summary**
+Retrieve high-level dashboard statistics, delta statistics for a selected time period, and current talent pool insights for the active company.
+
+* **Method**: `GET`
+* **Endpoint**: `/api/v1/dashboard/company/home-summary/`
+* **Access Roles**: Company Creator / Approved Company Mentor
+* **Query Parameters**:
+  * `period` *(string, optional)*: Time range to compute changes/deltas. Options: `7d`, `30d` (default), or `90d`.
+  * `karma_min` *(integer, optional)*: Minimum karma threshold to filter talent pool metrics.
+  * `karma_max` *(integer, optional)*: Maximum karma threshold to filter talent pool metrics.
+  * `level_order_min` *(integer, optional)*: Minimum level order to filter talent pool metrics.
+  * `interested_in_work` *(boolean/string, optional)*: Filter talent pool by availability for full-time work (`true`, `1`, `yes`).
+  * `interested_in_gig_work` *(boolean/string, optional)*: Filter talent pool by availability for gig work (`true`, `1`, `yes`).
+  * `ig_ids` *(string, optional)*: Comma-separated list of Interest Group IDs to filter talent pool metrics.
+* **Request Body**: None
+* **Success Response (200 OK)**:
+  ```json
+  {
+    "hasError": false,
+    "statusCode": 200,
+    "message": {
+      "general": [
+        "Company dashboard summary fetched successfully"
+      ]
+    },
+    "response": {
+      "company": {
+        "id": "e4b85c18-971c-4b57-a3a2-09477e732386",
+        "name": "Acme Corp",
+        "slug": "acme-corp",
+        "status": "verified",
+        "logo": "https://mulearn-assets.s3.amazonaws.com/logos/acme.png"
+      },
+      "quick_stats": {
+        "jobs_posted": 12,
+        "total_views": 1420,
+        "applications": 84,
+        "hired": 5
+      },
+      "stat_cards": [
+        {
+          "key": "jobs_posted",
+          "label": "Jobs posted",
+          "value": 12,
+          "delta": 3,
+          "delta_type": "increase",
+          "period": "30d"
+        },
+        {
+          "key": "total_views",
+          "label": "Total views",
+          "value": 1420,
+          "delta": 1420,
+          "delta_type": "increase",
+          "period": "30d"
+        },
+        {
+          "key": "applications",
+          "label": "Applications",
+          "value": 84,
+          "delta": 18,
+          "delta_type": "increase",
+          "period": "30d"
+        },
+        {
+          "key": "hired",
+          "label": "Hired",
+          "value": 5,
+          "delta": 1,
+          "delta_type": "increase",
+          "period": "30d"
+        }
+      ],
+      "talent_pool": {
+        "total_learners": 150,
+        "level_distribution": [
+          {
+            "level_id": "0df81e18-6878-433b-a25e-384fe8bf4501",
+            "level_name": "Level 1",
+            "level_order": 1,
+            "count": 90,
+            "percentage": 60.0
+          },
+          {
+            "level_id": "1ab81e18-9128-444b-b12e-384fe8bf4502",
+            "level_name": "Level 2",
+            "level_order": 2,
+            "count": 60,
+            "percentage": 40.0
+          }
+        ],
+        "top_interest_groups": [
+          {
+            "ig_id": "22e54148-3162-426b-ae23-1d07248ef729",
+            "name": "Python Development",
+            "learner_count": 45,
+            "total_karma": 225000
+          }
+        ]
+      }
+    }
+  }
+  ```
+
 ---
 
-## Quick Reference Table
+### **2. Track Job View**
+Increments the total view counter for a specific job listing published by the active company.
 
-| # | Method | Endpoint | Auth | Role | Public |
-|---|--------|----------|------|------|--------|
-| 1.1 | `POST` | `/register/` | JWT | Any Auth |  |
-| 1.2 | `PATCH` | `/register/` | JWT | Any Auth |  |
-| 1.3 | `GET` | `/status/` | JWT | Any Auth |  |
-| 1.4 | `GET` | `/profile/` | JWT | Company/Mentor |  |
-| 1.5 | `PATCH` | `/profile/` | JWT | Company/Mentor |  |
-| 2.1 | `GET` | `/summary/` | JWT | Admin |  |
-| 2.2 | `GET` | `/list/` | JWT | Admin |  |
-| 2.3 | `GET` | `/{company_id}/` | JWT | Admin |  |
-| 2.4 | `PATCH` | `/verify/{company_id}/` | JWT | Admin |  |
-| 3.1 | `GET` | `/profile/public/{slug}/` | None | Anyone |  |
-| 3.2 | `GET` | `/profile/public/{slug}/jobs/` | None | Anyone |  |
-| 3.3 | `GET` | `/jobs/all/` | JWT | Any Auth |  |
-| 4.1 | `GET` | `/jobs/` | JWT | Company/Mentor |  |
-| 4.2 | `POST` | `/jobs/` | JWT | Company/Mentor |  |
-| 4.3 | `GET` | `/jobs/{job_id}/` | JWT | Company/Mentor |  |
-| 4.4 | `PATCH` | `/jobs/{job_id}/` | JWT | Company/Mentor |  |
-| 4.5 | `DELETE` | `/jobs/{job_id}/` | JWT | Company/Mentor |  |
-| 5.1 | `POST` | `/jobs/{job_id}/apply/` | JWT | Any Auth |  |
-| 5.2 | `GET` | `/jobs/{job_id}/applications/` | JWT | Company/Mentor |  |
-| 5.3 | `PATCH` | `/applications/{app_id}/status/` | JWT | Company/Mentor |  |
-| 5.4 | `GET` | `/applications/me/` | JWT | Any Auth |  |
-| 5.5 | `DELETE` | `/applications/{app_id}/withdraw/` | JWT | Applicant |  |
-| 5.6 | `PATCH` | `/applications/{app_id}/resubmit/` | JWT | Applicant |  |
-| 6.1 | `GET` | `/tasks/` | JWT | Company/Mentor |  |
-| 6.2 | `POST` | `/tasks/` | JWT | Company/Mentor |  |
-| 6.3 | `GET` | `/tasks/{task_id}/` | JWT | Company/Mentor |  |
-| 6.4 | `PUT` | `/tasks/{task_id}/` | JWT | Company/Mentor |  |
-| 6.5 | `DELETE` | `/tasks/{task_id}/` | JWT | Company/Mentor |  |
-| 7.1 | `POST` | `/mentor/nominate/` | JWT | Company (creator) |  |
-| 7.2 | `GET` | `/mentor/list/` | JWT | Company (creator) |  |
-| 8.1 | `GET` | `/mulearners/` | JWT | Company/Mentor |  |
-| 9.1 | `GET` | `/analytics/gigs/` | JWT | Company/Mentor |  |
+* **Method**: `POST`
+* **Endpoint**: `/api/v1/dashboard/company/jobs/<str:job_id>/view/`
+* **Access Roles**: Company Creator / Approved Company Mentor
+* **Path Parameters**:
+  * `job_id` *(string, required)*: The unique ID of the target job listing.
+* **Request Body**: None
+* **Success Response (200 OK)**:
+  ```json
+  {
+    "hasError": false,
+    "statusCode": 200,
+    "message": {
+      "general": [
+        "Job view tracked successfully."
+      ]
+    },
+    "response": {}
+  }
+  ```
+* **Error Responses**:
+  * `404 Not Found` (Company not found / access denied, or Job not found):
+    ```json
+    {
+      "hasError": true,
+      "statusCode": 404,
+      "message": {
+        "general": [
+          "Job not found or access denied."
+        ]
+      },
+      "response": {}
+    }
+    ```
 
 ---
 
-> **Note on Error Responses:** All error responses follow the format:
-> ```json
-> { "statusCode": 4xx, "message": "Error description" }
-> ```
-> Authentication failures return `401 Unauthorized`. Role/permission failures return `403 Forbidden`.
+### **3. Company Job Engagement Analytics**
+Fetches granular analytics for a single job listing, including total view count, application count, hire count, and calculated application conversion rate.
+
+* **Method**: `GET`
+* **Endpoint**: `/api/v1/dashboard/company/jobs/<str:job_id>/analytics/`
+* **Access Roles**: Company Creator / Approved Company Mentor
+* **Path Parameters**:
+  * `job_id` *(string, required)*: The unique ID of the target job listing.
+* **Request Body**: None
+* **Success Response (200 OK)**:
+  ```json
+  {
+    "hasError": false,
+    "statusCode": 200,
+    "message": {
+      "general": [
+        "Job analytics fetched successfully"
+      ]
+    },
+    "response": {
+      "job_id": "84ea9c1a-de71-4a1f-ba9e-64d88e63b154",
+      "job_title": "Frontend Developer Intern",
+      "total_views": 250,
+      "total_applications": 25,
+      "total_hired": 3,
+      "conversion_rate_percentage": 10.0
+    }
+  }
+  ```
+* **Error Responses**:
+  * `404 Not Found` (Job not found or unauthorized):
+    ```json
+    {
+      "hasError": true,
+      "statusCode": 404,
+      "message": {
+        "general": [
+          "Job not found or access denied."
+        ]
+      },
+      "response": {}
+    }
+    ```
+
+---
+
+### **4. Company Talent Pool Analytics**
+Retrieve statistical insights and distributions of all registered, public learners within the ecosystem. Supports filters like skill focus (interest groups), minimum levels, and availability indicators.
+
+* **Method**: `GET`
+* **Endpoint**: `/api/v1/dashboard/company/talent-pool/analytics/`
+* **Access Roles**: Company Creator / Approved Company Mentor
+* **Query Parameters**:
+  * `karma_min` *(integer, optional)*: Filter learners with karma points greater than or equal to this value.
+  * `karma_max` *(integer, optional)*: Filter learners with karma points less than or equal to this value.
+  * `level_order_min` *(integer, optional)*: Filter learners whose level order is greater than or equal to this value.
+  * `interested_in_work` *(boolean/string, optional)*: Filter learners open to full-time work (`true`, `1`, `yes`).
+  * `interested_in_gig_work` *(boolean/string, optional)*: Filter learners open to gig/freelance work (`true`, `1`, `yes`).
+  * `ig_ids` *(string, optional)*: Comma-separated list of Interest Group IDs to narrow down learners by specific interests.
+* **Request Body**: None
+* **Success Response (200 OK)**:
+  ```json
+  {
+    "hasError": false,
+    "statusCode": 200,
+    "message": {
+      "general": [
+        "Talent pool analytics fetched successfully"
+      ]
+    },
+    "response": {
+      "total_learners": 1500,
+      "level_distribution": [
+        {
+          "level_id": "0df81e18-6878-433b-a25e-384fe8bf4501",
+          "level_name": "Level 1",
+          "level_order": 1,
+          "count": 500,
+          "percentage": 33.33
+        },
+        {
+          "level_id": "1ab81e18-9128-444b-b12e-384fe8bf4502",
+          "level_name": "Level 2",
+          "level_order": 2,
+          "count": 750,
+          "percentage": 50.0
+        },
+        {
+          "level_id": "2cf81e18-1248-477b-c32e-384fe8bf4503",
+          "level_name": "Level 3",
+          "level_order": 3,
+          "count": 250,
+          "percentage": 16.67
+        }
+      ],
+      "top_interest_groups": [
+        {
+          "ig_id": "22e54148-3162-426b-ae23-1d07248ef729",
+          "name": "Python Development",
+          "learner_count": 300,
+          "total_karma": 1250000
+        },
+        {
+          "ig_id": "99e12014-9988-4bb4-acb2-2a07248ef888",
+          "name": "UI/UX Design",
+          "learner_count": 120,
+          "total_karma": 480000
+        }
+      ]
+    }
+  }
+  ```
+* **Error Responses**:
+  * `400 Bad Request` (Invalid query parameter formats):
+    ```json
+    {
+      "hasError": true,
+      "statusCode": 400,
+      "message": {
+        "general": [
+          "Invalid numeric filter value"
+        ]
+      },
+      "response": {
+        "error_code": "INVALID_FILTER_VALUE"
+      }
+    }
+    ```
