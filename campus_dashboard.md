@@ -8,7 +8,7 @@ This document serves as the backend API reference for the Campus Dashboard modul
 `/api/v1/dashboard/campus`
 
 ### Authentication Model
-- **Anonymous Endpoints**: Currently, `CollegeApi` is unauthenticated. *(Note: `CampusDetailsPublicAPI` currently enforces JWT validation pending a roadmap fix).*
+- **Anonymous Endpoints**: `CollegeApi` and `CampusDetailsPublicAPI` are unauthenticated and publicly accessible.
 - **JWT Requirements**: All non-public endpoints require a valid JWT Bearer token enforced via `CustomizePermission`.
 - **Campus Role Requirements**: Most management APIs (e.g., Showcase, Execom, Transfers) require the `@campus_staff_required` or explicit `@role_required` decorators (`Campus Lead` or `Lead Enabler`).
 - **Campus Scope Enforcement**: Standardized isolated endpoints use `get_campus_context(request)` to fetch tenant data based on the caller's JWT link. Legacy endpoints accept an `<str:org_id>` URL parameter.
@@ -55,7 +55,7 @@ GET /api/v1/dashboard/campus/<str:org_id>/
 #### Description
 Publicly accessible college showcase details.
 #### Authentication
-`Required: JWT` *(Currently enforced)*
+`No Authentication Required`
 #### Path Parameters
 | Name | Type | Required | Description |
 | ---- | ---- | -------- | ----------- |
