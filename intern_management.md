@@ -309,7 +309,7 @@ Meera Pillai,meerapillai@mulearn,DESIGN,AT_RISK,2024-04-15 09:30:00
 
 Base path: `/api/v1/dashboard/manage-interns/tasks/`
 
-Admins create, update, and delete tasks that are assigned to interns.
+Admins create, update, verify and delete tasks that are assigned to interns.
 
 ---
 
@@ -347,6 +347,10 @@ Authorization: Bearer <admin-token>
         "complexity": "HIGH",
         "assigned_to": "user-uuid-intern-001",
         "status": "IN_PROGRESS",
+        "karma_awarded": 0,
+        "output_link": null,
+        "is_verified": false,
+        "verified_by": null,
         "team": "BACKEND",
         "deadline": "2024-06-15",
         "iso_week": 24,
@@ -477,7 +481,36 @@ Content-Type: application/json
 
 ---
 
-### 2.5 `DELETE /tasks/<task_id>/`
+### 2.5 `POST /tasks/<task_id>/verify/`
+
+Verify a task completed by an intern and optionally award custom karma. A task cannot be modified by an intern once it has been verified.
+
+**Request**
+```http
+POST /api/v1/dashboard/manage-interns/tasks/task-uuid-0099/verify/
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "karma_awarded": 150
+}
+```
+
+**Response `200 OK`**
+```json
+{ "hasError": false, "statusCode": 200, "message": "Task verified successfully." }
+```
+
+**Error `400`** — Already verified
+```json
+{ "hasError": true, "statusCode": 400, "message": "Task is already verified." }
+```
+
+---
+
+### 2.6 `DELETE /tasks/<task_id>/`
 
 Permanently delete a task.
 
@@ -683,7 +716,6 @@ Authorization: Bearer <admin-token>
         "end_of_day_note": "Completed JWT integration",
         "edit_reason": null,
         "status": "PENDING",
-        "karma_awarded": null,
         "review_note": null,
         "created_at": "2024-06-03T18:45:00Z"
       }
@@ -839,7 +871,9 @@ Authorization: Bearer <admin-token>
         "week_end_date": "2024-06-09",
         "team": "BACKEND",
         "is_on_leave": false,
-        "tasks_assigned": "Build leave API, write unit tests",
+        "tasks_assigned": {
+          "task-uuid-0099": "COMPLETED"
+        },
         "tasks_completed": "Leave API complete, tests written",
         "weekly_review": "Learnings: Better ORM usage. Challenges: Date timezone handling.",
         "task_remarks": {
@@ -854,7 +888,6 @@ Authorization: Bearer <admin-token>
         "suggestions": null,
         "is_late": false,
         "status": "PENDING",
-        "karma_awarded": null,
         "review_note": null,
         "created_at": "2024-06-07T17:00:00Z"
       }
@@ -995,32 +1028,4 @@ All paginated list endpoints accept:
 | `ACTIVE` | Healthy, participating intern |
 | `AT_RISK` | Intern with missed submissions; auto-managed by daily cron |
 | `ON_LEAVE` | Currently on approved leave |
-| `INACTIVE` | Offboarded; `INTERN` role removed |
-
-### Task Complexity Values
-
-| Complexity | Score | Description |
-|------------|-------|-------------|
-| `LOW` | 1 | Simple / routine task |
-| `MEDIUM` | 2 | Standard task |
-| `HIGH` | 3 | Complex task |
-| `CRITICAL` | 5 | High-impact / time-sensitive task |
-
-### Review Action Values
-
-| Action | Result |
-|--------|--------|
-| `approve` | Marks as `APPROVED`, awards karma, updates streaks |
-| `reject` | Marks as `REJECTED`, adds `review_note` feedback |
-
-### Side Effects of Actions
-
-| Action | Side Effect |
-|--------|-------------|
-| Onboard intern (`POST /interns/`) | Assigns `INTERN` role automatically |
-| Deactivate intern (`DELETE /interns/<id>/`) | Sets status `INACTIVE`, removes `INTERN` role |
-| Update status to `INACTIVE` (`PATCH`) | Removes `INTERN` role |
-| Restore status from `INACTIVE` (`PATCH`) | Re-assigns `INTERN` role |
-| Approve timesheet | Awards karma + streak bonus, may restore `AT_RISK` → `ACTIVE` |
-| Approve leave within today's date range | Sets intern guild status to `ON_LEAVE` |
-| Guild reassignment | Logged in `SystemActionLog` |
+| `INACTIVE` | Intern is offboarded/deactivated |
