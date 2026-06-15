@@ -196,7 +196,6 @@ Authorization: Bearer <token>
         "end_of_day_note": "Completed JWT integration",
         "edit_reason": null,
         "status": "PENDING",
-        "karma_awarded": null,
         "review_note": null,
         "created_at": "2024-06-03T18:45:00Z"
       }
@@ -243,7 +242,6 @@ Authorization: Bearer <token>
     "end_of_day_note": "Completed JWT integration",
     "edit_reason": null,
     "status": "PENDING",
-    "karma_awarded": null,
     "review_note": null,
     "created_at": "2024-06-03T18:45:00Z"
   }
@@ -286,6 +284,7 @@ Content-Type: application/json
   "category": "DEVELOPMENT",
   "task": "task-uuid-0099",
   "task_status": "COMPLETED",
+  "task_output_link": "https://github.com/my-repo/pr-123",
   "description": "Completed the assigned task on leave module",
   "hours": "5.50",
   "blockers": "None"
@@ -303,6 +302,7 @@ Content-Type: application/json
 | `blockers` | string | ❌ | Any blockers encountered |
 | `task` | UUID | ❌ | Linked intern task ID |
 | `task_status` | string | ❌ (required if `task` is set) | New status for the linked task |
+| `task_output_link` | URL | ❌ (required if `task_status` is `COMPLETED`) | Output link proving completion |
 | `end_of_day_note` | string | ❌ | End-of-day summary |
 | `edit_reason` | string | ❌ (required for late submissions) | Reason for late entry |
 
@@ -437,7 +437,9 @@ Authorization: Bearer <token>
         "week_end_date": "2024-06-09",
         "team": "Backend",
         "is_on_leave": false,
-        "tasks_assigned": "Complete leave API, fix auth bug",
+        "tasks_assigned": {
+          "task-uuid-0099": "COMPLETED"
+        },
         "tasks_completed": "Leave API done, auth bug fixed",
         "weekly_review": "Learnings: Improved understanding of JWT. Challenges Faced: Complex edge cases in date logic.",
         "task_remarks": {
@@ -452,7 +454,6 @@ Authorization: Bearer <token>
         "suggestions": null,
         "is_late": false,
         "status": "PENDING",
-        "karma_awarded": null,
         "review_note": null,
         "created_at": "2024-06-07T17:00:00Z"
       }
@@ -505,7 +506,10 @@ Content-Type: application/json
 {
   "team": "Backend",
   "is_on_leave": false,
-  "tasks_assigned": "Implement leave API, write unit tests",
+  "tasks_assigned": {
+    "task-uuid-0099": "COMPLETED",
+    "task-uuid-0100": "IN_PROGRESS"
+  },
   "tasks_completed": "Leave API complete, tests written",
   "hours_committed": 35,
   "blockers": "None",
@@ -536,7 +540,7 @@ Content-Type: application/json
 | `team` | string | ✅ | The intern's team name |
 | `is_on_leave` | boolean | ✅ | Whether the intern was on leave this week |
 | `hours_committed` | int | ✅ (if not on leave) | Hours worked this week, must be `> 0` |
-| `tasks_assigned` | string | ❌ | Tasks assigned during the week |
+| `tasks_assigned` | object (JSON) | ❌ | Key-value pairs of Task IDs and their current statuses |
 | `tasks_completed` | string | ❌ | Tasks completed during the week |
 | `weekly_review` | string | ❌ | Free-form review text (auto-generated if omitted) |
 | `blockers` | string | ❌ | Any blockers |
@@ -663,6 +667,10 @@ Authorization: Bearer <token>
         "assigned_to": "user-uuid-intern-001",
         "assigned_to_name": "Arun Dev",
         "status": "IN_PROGRESS",
+        "karma_awarded": 0,
+        "output_link": null,
+        "is_verified": false,
+        "verified_by": null,
         "created_by": "user-uuid-mentor-001",
         "created_by_name": "Priya Mentor",
         "created_at": "2024-05-28T10:00:00Z",
@@ -684,7 +692,7 @@ Authorization: Bearer <token>
 
 ### 4.2 `PATCH /tasks/<task_id>/`
 
-Update the status of a specific assigned task.
+Update the status of a specific assigned task. Note that you cannot edit a task that has already been verified by an admin.
 
 **Request**
 ```http
@@ -695,11 +703,12 @@ Content-Type: application/json
 
 ```json
 {
-  "status": "COMPLETED"
+  "status": "COMPLETED",
+  "output_link": "https://github.com/my-repo/pr-123"
 }
 ```
 
-**Valid status values:** `TODO`, `IN_PROGRESS`, `COMPLETED`, `ON_HOLD`
+**Valid status values:** `TODO`, `IN_PROGRESS`, `COMPLETED`, `ON_HOLD`, `OVERDUE`
 
 **Response `200 OK`**
 ```json
@@ -714,6 +723,16 @@ Content-Type: application/json
 **Error `400`** — status missing
 ```json
 { "hasError": true, "statusCode": 400, "message": "Status is required." }
+```
+
+**Error `400`** — output_link missing when marking as COMPLETED
+```json
+{ "hasError": true, "statusCode": 400, "message": "output_link is required when completing a task." }
+```
+
+**Error `400`** — task is already verified
+```json
+{ "hasError": true, "statusCode": 400, "message": "Task is already verified and cannot be edited." }
 ```
 
 ---
@@ -1002,11 +1021,11 @@ Authorization: Bearer <token>
 
 **Score Formula:**
 ```
-score = (karma × KARMA_MULTIPLIER)
-      + (daily_streak × DAILY_STREAK_MULTIPLIER)
-      + (weekly_streak × WEEKLY_STREAK_MULTIPLIER)
-      + (completed_tasks × COMPLETED_TASKS_MULTIPLIER)
-      + (complexity_score × COMPLEXITY_SCORE_MULTIPLIER)
+score = (
+    approved_daily_timesheets_count * 25 +
+    approved_weekly_reviews_count * 50 +
+    complexity_score * verified_intern_tasks_karma_sum
+)
 ```
 
 **Complexity score mapping:** `LOW=1`, `MEDIUM=2`, `HIGH=3`, `CRITICAL=5`
