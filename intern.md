@@ -1,1015 +1,944 @@
-# Intern Dashboard API Reference
+# Intern Dashboard & Intern Management — API Reference
 
-**Base URL:** `/api/v1/dashboard/intern/`  
-**Authentication:** All endpoints require a valid JWT token via the `Authorization: Bearer <token>` header.  
-**Default Role Required:** `INTERN` (unless stated otherwise)
+> **Base prefix:** `/api/v1/dashboard/intern/` (Intern dashboard)  
+> `/api/v1/dashboard/manage-interns/` (Admin management)  
+> All endpoints require a valid **JWT Bearer token** in the `Authorization` header.
 
 ---
 
 ## Table of Contents
 
-1. [Overview](#1-overview)
-2. [Timesheets](#2-timesheets)
-3. [Weekly Reviews](#3-weekly-reviews)
-4. [Tasks](#4-tasks)
-5. [Leave Management](#5-leave-management)
-6. [Leaderboard](#6-leaderboard)
-7. [Guilds](#7-guilds)
-8. [Common Patterns](#8-common-patterns)
+- [Enums & Constants](#enums--constants)
+- [Pagination Query Params](#pagination-query-params)
+- [Part 1 — Intern Dashboard (Role: Intern)](#part-1--intern-dashboard-role-intern)
+  - [Overview](#1-overview)
+  - [Tasks](#2-tasks)
+  - [Timesheets](#3-timesheets)
+  - [Weekly Reviews](#4-weekly-reviews)
+  - [Leave](#5-leave)
+  - [Leaderboard](#6-leaderboard)
+  - [Guilds](#7-guilds)
+- [Part 2 — Intern Management (Role: Admin)](#part-2--intern-management-role-admin)
+  - [Interns CRUD](#1-interns-crud)
+  - [Task Management](#2-task-management)
+  - [Timesheet & Review Administration](#3-timesheet--review-administration)
+  - [Leave Administration](#4-leave-administration)
 
 ---
 
-## 1. Overview
+## Enums & Constants
 
-Base path: `/api/v1/dashboard/intern/overview/`
+### `InternGuildStatus`
+| Value | Meaning |
+|---|---|
+| `ACTIVE` | Intern is actively working |
+| `AT_RISK` | Intern has missed submissions |
+| `ON_LEAVE` | Intern is on approved leave |
+| `INACTIVE` | Intern has been deactivated |
 
-### 1.1 `GET /overview/status/`
+### `InternGuild`
+| Value |
+|---|
+| `Frontend Guild` |
+| `Backend Guild` |
+| `Design Guild` |
+| `Mobile Guild` |
 
-Retrieve the authenticated intern's overview stats: guild, karma, streaks, completed tasks, complexity score, and weighted leaderboard score.
+### `InternTaskStatus`
+| Value | Editable by Intern |
+|---|---|
+| `NOT_STARTED` | ❌ |
+| `IN_PROGRESS` | ✅ |
+| `COMPLETED` | ✅ (requires `output_link`) |
+| `WAITING_FOR_REVIEW` | ✅ |
+| `ON_HOLD` | ✅ |
+| `OVERDUE` | ❌ (set by system) |
 
-**Request**
-```http
-GET /api/v1/dashboard/intern/overview/status/
-Authorization: Bearer <token>
+### `InternTaskComplexity`
+| Value | Weight |
+|---|---|
+| `LOW` | 1 |
+| `MEDIUM` | 2 |
+| `HIGH` | 3 |
+| `CRITICAL` | 5 |
+
+### `InternTaskCategory`
+| Guild | Sub-categories |
+|---|---|
+| `BACKEND` | `Backend API`, `Auth API`, `Bot`, `Database`, `DevOps`, `Documentation` |
+| `FRONTEND` | `UI Components`, `API Integration`, `Bug Fix`, `Performance`, `Accessibility`, `Documentation` |
+| `DESIGN` | `Wireframes`, `Prototyping`, `Branding`, `Research` |
+
+### `InternSubmissionStatus` (Timesheets & Weekly Reviews)
+| Value |
+|---|
+| `PENDING` |
+| `APPROVED` |
+| `REJECTED` |
+
+### `InternLeaveType`
+| Value |
+|---|
+| `SICK` |
+| `CASUAL` |
+| `EMERGENCY` |
+| `WFH` |
+
+### `InternLeaveStatus`
+| Value |
+|---|
+| `PENDING` |
+| `APPROVED` |
+| `REJECTED` |
+| `CANCELLED` |
+
+### Leaderboard Score Formula
+
+**Intern overview score:**
+```
+score = (total_intern_karma × 1)
+      + (daily_streak × 50)
+      + (weekly_streak × 200)
+      + (completed_tasks × 30)
+      + (complexity_score × 20)
 ```
 
-**Response `200 OK`**
+**Leaderboard score (authoritative):**
+```
+score = (approved_timesheets × 25)
+      + (approved_weekly_reviews × 50)
+      + sum(task.karma_awarded × complexity_weight for verified tasks)
+```
+
+---
+
+## Pagination Query Params
+
+All list endpoints support:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `page` | int | `1` | Page number |
+| `page_size` | int | `10` | Items per page |
+| `search` | string | — | Full-text search on searchable fields |
+| `sort_by` | string | — | Field to sort by (see per-endpoint docs) |
+| `order` | `asc`\|`desc` | `desc` | Sort direction |
+
+**Pagination response shape:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Successful",
-  "response": {
-    "guild": "DESIGN",
-    "status": "ACTIVE",
-    "total_intern_karma": 340,
-    "daily_streak": 12,
-    "weekly_streak": 5,
-    "completed_tasks": 8,
-    "complexity_score": 22,
-    "score": 1248.5
+  "pagination": {
+    "count": 42,
+    "totalPages": 5,
+    "isNext": true,
+    "isPrev": false,
+    "nextPage": 2
   }
 }
 ```
 
-**Error `400 Bad Request`** — intern not found
+---
+
+## Part 1 — Intern Dashboard (Role: Intern)
+
+### 1. Overview
+
+#### `GET /api/v1/dashboard/intern/overview/status/`
+**Description:** Retrieve the intern's overview stats (karma, streaks, tasks, score).  
+**Required Role:** `Intern`
+
+**Response `200 OK`:**
 ```json
 {
-  "hasError": true,
-  "statusCode": 400,
-  "message": "Not an intern."
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "guild": "Backend Guild",
+    "status": "ACTIVE",
+    "join_date": "2025-06-01",
+    "total_intern_karma": 120,
+    "daily_streak": 5,
+    "weekly_streak": 2,
+    "completed_tasks": 3,
+    "complexity_score": 7,
+    "score": 870,
+    "total_interns": 14
+  }
 }
 ```
 
+**Constraints:**
+- User must have a `UserInternGuildLink` record. Returns 400 with `"Not an intern."` otherwise.
+- Karma only counts logs tagged with `#intern-*` hashtag.
+
 ---
 
-### 1.2 `GET /overview/activity/`
+#### `GET /api/v1/dashboard/intern/overview/activity/`
+**Description:** Paginated list of the intern's karma activity log (intern tasks only).  
+**Required Role:** `Intern`  
+**Sortable by:** `created_at`  
+**Searchable:** `task__title`
 
-Retrieve a paginated list of the intern's karma activity log (only `#intern-*` tagged tasks).
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/overview/activity/?page=1&perPage=10
-Authorization: Bearer <token>
-```
-
-**Query Parameters**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | int | `1` | Page number |
-| `perPage` | int | `10` | Items per page |
-| `search` | string | — | Search by task title |
-| `sortBy` | string | `created_at` | Sort field |
-| `sortOrder` | string | `desc` | `asc` or `desc` |
-
-**Response `200 OK`**
+**Response `200 OK`:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "statusCode": 6000,
   "message": "Successful",
   "response": {
     "data": [
       {
-        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        "task_title": "#intern-daily-timesheet",
-        "karma": 10,
-        "created_at": "2024-06-03T18:30:00Z"
-      },
-      {
-        "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-        "task_title": "#intern-weekly-review",
-        "karma": 25,
-        "created_at": "2024-06-02T12:00:00Z"
+        "id": "uuid-of-log",
+        "task_title": "Build Authentication API",
+        "karma": 50,
+        "created_at": "2025-06-10T08:30:00Z"
       }
     ],
-    "pagination": {
-      "count": 24,
-      "totalPages": 3,
-      "isNext": true,
-      "isPrev": false,
-      "nextPage": 2
-    }
+    "pagination": { "count": 8, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
   }
 }
 ```
 
 ---
 
-### 1.3 `GET /overview/leaderboard/top/`
+#### `GET /api/v1/dashboard/intern/overview/leaderboard/top/`
+**Description:** Top 3 interns on the leaderboard (uses authoritative leaderboard formula).  
+**Required Role:** `Intern`
 
-Retrieve the top 3 interns on the leaderboard (preview widget for the overview dashboard).
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/overview/leaderboard/top/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
+**Response `200 OK`:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "statusCode": 6000,
   "message": "Successful",
   "response": [
     {
-      "user_id": "a1b2c3d4-0000-0000-0000-000000000001",
-      "full_name": "Arjun Nair",
-      "guild": "BACKEND",
-      "score": 2100.0,
+      "user_id": "uuid-1",
+      "full_name": "Alice Johnson",
+      "guild": "Frontend Guild",
+      "score": 3200,
       "rank": 1
     },
     {
-      "user_id": "a1b2c3d4-0000-0000-0000-000000000002",
-      "full_name": "Meera Pillai",
-      "guild": "DESIGN",
-      "score": 1850.0,
+      "user_id": "uuid-2",
+      "full_name": "Bob Kumar",
+      "guild": "Backend Guild",
+      "score": 2750,
       "rank": 2
     },
     {
-      "user_id": "a1b2c3d4-0000-0000-0000-000000000003",
-      "full_name": "Rahul Krishnan",
-      "guild": "FRONTEND",
-      "score": 1620.5,
+      "user_id": "uuid-3",
+      "full_name": "Clara Thomas",
+      "guild": "Design Guild",
+      "score": 2100,
       "rank": 3
     }
   ]
 }
 ```
 
+**Constraints:**
+- Only interns with status `ACTIVE`, `AT_RISK`, or `ON_LEAVE` appear.
+
 ---
 
-## 2. Timesheets
+### 2. Tasks
 
-Base path: `/api/v1/dashboard/intern/timesheets/`
+#### `GET /api/v1/dashboard/intern/tasks/categories/`
+**Description:** List all task categories and their sub-categories.  
+**Required Role:** `Intern`
 
-### 2.1 `GET /timesheets/`
-
-Retrieve a paginated list of all the authenticated intern's timesheet entries.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/timesheets/?page=1&perPage=10
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
+**Response `200 OK`:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "BACKEND": ["Backend API", "Auth API", "Bot", "Database", "DevOps", "Documentation"],
+    "FRONTEND": ["UI Components", "API Integration", "Bug Fix", "Performance", "Accessibility", "Documentation"],
+    "DESIGN": ["Wireframes", "Prototyping", "Branding", "Research"]
+  }
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/intern/tasks/mine/`
+**Description:** Paginated list of all tasks assigned to the current intern.  
+**Required Role:** `Intern`  
+**Searchable:** `title`, `status`  
+**Sortable by:** `created_at`, `status`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
   "message": "Successful",
   "response": {
     "data": [
       {
-        "id": "ts-uuid-0001",
-        "entry_date": "2024-06-03",
-        "task_id": null,
-        "category": "DEVELOPMENT",
-        "description": "Worked on the authentication module",
-        "hours": "6.50",
-        "blockers": "None",
-        "task_status": null,
-        "remark": null,
-        "end_of_day_note": "Completed JWT integration",
-        "edit_reason": null,
-        "status": "PENDING",
-        "review_note": null,
-        "created_at": "2024-06-03T18:45:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 15,
-      "totalPages": 2,
-      "isNext": true,
-      "isPrev": false,
-      "nextPage": 2
-    }
-  }
-}
-```
-
----
-
-### 2.2 `GET /timesheets/<timesheet_id>/`
-
-Retrieve a single timesheet entry by ID.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/timesheets/ts-uuid-0001/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Successful",
-  "response": {
-    "id": "ts-uuid-0001",
-    "entry_date": "2024-06-03",
-    "task_id": "task-uuid-0099",
-    "category": "DEVELOPMENT",
-    "description": "Worked on the authentication module",
-    "hours": "6.50",
-    "blockers": "None",
-    "task_status": "IN_PROGRESS",
-    "remark": null,
-    "end_of_day_note": "Completed JWT integration",
-    "edit_reason": null,
-    "status": "PENDING",
-    "review_note": null,
-    "created_at": "2024-06-03T18:45:00Z"
-  }
-}
-```
-
-**Error `400`** — not found
-```json
-{ "hasError": true, "statusCode": 400, "message": "Timesheet not found." }
-```
-
----
-
-### 2.3 `POST /timesheets/`
-
-Submit a new daily timesheet entry. Only one entry per date is allowed.
-
-**Request**
-```http
-POST /api/v1/dashboard/intern/timesheets/
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-```json
-{
-  "entry_date": "2024-06-04",
-  "category": "DEVELOPMENT",
-  "description": "Implemented leave management API endpoints",
-  "hours": "7.00",
-  "blockers": "None",
-  "end_of_day_note": "All endpoints tested and working"
-}
-```
-
-**With a linked task:**
-```json
-{
-  "entry_date": "2024-06-04",
-  "category": "DEVELOPMENT",
-  "task": "task-uuid-0099",
-  "task_status": "COMPLETED",
-  "task_output_link": "https://github.com/my-repo/pr-123",
-  "description": "Completed the assigned task on leave module",
-  "hours": "5.50",
-  "blockers": "None"
-}
-```
-
-**Fields**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `entry_date` | date (`YYYY-MM-DD`) | ✅ | Must not be a future date. Dates older than yesterday require `edit_reason`. |
-| `category` | string | ✅ | Work category (e.g. `DEVELOPMENT`, `DESIGN`, `TESTING`) |
-| `description` | string | ✅ | Description of work done (alias: `log_description`) |
-| `hours` | decimal | ✅ | Hours worked, must be `> 0` (alias: `hours_worked`) |
-| `blockers` | string | ❌ | Any blockers encountered |
-| `task` | UUID | ❌ | Linked intern task ID |
-| `task_status` | string | ❌ (required if `task` is set) | New status for the linked task |
-| `task_output_link` | URL | ❌ (required if `task_status` is `COMPLETED`) | Output link proving completion |
-| `end_of_day_note` | string | ❌ | End-of-day summary |
-| `edit_reason` | string | ❌ (required for late submissions) | Reason for late entry |
-
-**Response `200 OK`**
-```json
-{ "hasError": false, "statusCode": 200, "message": "Timesheet submitted successfully." }
-```
-
-**Error `409 Conflict`** — duplicate entry for date
-```json
-{ "hasError": true, "statusCode": 409, "message": "Timesheet for this date already exists." }
-```
-
----
-
-### 2.4 `PATCH /timesheets/<timesheet_id>/`
-
-Edit the `remark` or `end_of_day_note` of an existing timesheet. `edit_reason` is mandatory.
-
-**Request**
-```http
-PATCH /api/v1/dashboard/intern/timesheets/ts-uuid-0001/
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-```json
-{
-  "remark": "Reviewed by senior dev — all good",
-  "end_of_day_note": "Also fixed a bug in the auth flow",
-  "edit_reason": "Forgot to add EOD note earlier"
-}
-```
-
-**Response `200 OK`**
-```json
-{ "hasError": false, "statusCode": 200, "message": "Timesheet updated successfully." }
-```
-
-**Error `400`** — no edit_reason provided
-```json
-{ "hasError": true, "statusCode": 400, "message": "edit_reason is mandatory for modifications." }
-```
-
----
-
-### 2.5 `GET /timesheets/today/`
-
-Retrieve today's timesheet entry for the authenticated intern.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/timesheets/today/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`** — same shape as single timesheet response.
-
-**Error `400`** — no entry today
-```json
-{ "hasError": true, "statusCode": 400, "message": "No timesheet submitted for today." }
-```
-
----
-
-### 2.6 `GET /timesheets/history/`
-
-Retrieve paginated timesheet history (sorted by entry date descending).
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/timesheets/history/?page=1&perPage=20
-Authorization: Bearer <token>
-```
-
-**Response** — same paginated shape as `GET /timesheets/`
-
----
-
-### 2.7 `GET /timesheets/summary/`
-
-Retrieve intern streak statistics for daily timesheet submissions.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/timesheets/summary/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Successful",
-  "response": {
-    "current_streak": 12,
-    "longest_streak": 18
-  }
-}
-```
-
----
-
-## 3. Weekly Reviews
-
-Base path: `/api/v1/dashboard/intern/reviews/`
-
-### 3.1 `GET /reviews/`
-
-Retrieve all weekly reviews for the authenticated intern (paginated, latest first).
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/reviews/?page=1&perPage=10
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Successful",
-  "response": {
-    "data": [
-      {
-        "id": "rev-uuid-0001",
-        "iso_year": 2024,
-        "iso_week": 23,
-        "week_start_date": "2024-06-03",
-        "week_end_date": "2024-06-09",
-        "team": "Backend",
-        "is_on_leave": false,
-        "tasks_assigned": {
-          "task-uuid-0099": "COMPLETED"
-        },
-        "tasks_completed": "Leave API done, auth bug fixed",
-        "weekly_review": "Learnings: Improved understanding of JWT. Challenges Faced: Complex edge cases in date logic.",
-        "task_remarks": {
-          "rating": 4,
-          "next_week_plan": "Start timesheet module",
-          "challenges_faced": "Complex edge cases in date logic",
-          "learnings": "Improved understanding of JWT"
-        },
-        "hours_committed": 35,
-        "blockers": "None this week",
-        "leave_days": 0,
-        "suggestions": null,
-        "is_late": false,
-        "status": "PENDING",
-        "review_note": null,
-        "created_at": "2024-06-07T17:00:00Z"
-      }
-    ],
-    "pagination": {
-      "count": 5,
-      "totalPages": 1,
-      "isNext": false,
-      "isPrev": false,
-      "nextPage": null
-    }
-  }
-}
-```
-
----
-
-### 3.2 `GET /reviews/<review_id>/`
-
-Retrieve a single weekly review by ID.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/reviews/rev-uuid-0001/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`** — same shape as a single item in the list above.
-
-**Error `400`**
-```json
-{ "hasError": true, "statusCode": 400, "message": "Weekly review not found." }
-```
-
----
-
-### 3.3 `POST /reviews/`
-
-Submit a new weekly review. Only one review is allowed per ISO week.
-
-**Request**
-```http
-POST /api/v1/dashboard/intern/reviews/
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-**Standard submission (not on leave):**
-```json
-{
-  "team": "Backend",
-  "is_on_leave": false,
-  "tasks_assigned": {
-    "task-uuid-0099": "COMPLETED",
-    "task-uuid-0100": "IN_PROGRESS"
-  },
-  "tasks_completed": "Leave API complete, tests written",
-  "hours_committed": 35,
-  "blockers": "None",
-  "leave_days": 0,
-  "suggestions": "Add more intern onboarding docs",
-  "rating": 4,
-  "learnings": "Deep dive into Django ORM aggregations",
-  "challenges_faced": "Debugging timezone-aware date comparisons",
-  "next_week_plan": "Start timesheet module"
-}
-```
-
-**On-leave submission:**
-```json
-{
-  "team": "Backend",
-  "is_on_leave": true,
-  "leave_days": 4,
-  "hours_committed": 0,
-  "blockers": null
-}
-```
-
-**Fields**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `team` | string | ✅ | The intern's team name |
-| `is_on_leave` | boolean | ✅ | Whether the intern was on leave this week |
-| `hours_committed` | int | ✅ (if not on leave) | Hours worked this week, must be `> 0` |
-| `tasks_assigned` | object (JSON) | ❌ | Key-value pairs of Task IDs and their current statuses |
-| `tasks_completed` | string | ❌ | Tasks completed during the week |
-| `weekly_review` | string | ❌ | Free-form review text (auto-generated if omitted) |
-| `blockers` | string | ❌ | Any blockers |
-| `leave_days` | int | ❌ | Number of days on leave |
-| `suggestions` | string | ❌ | Suggestions or feedback |
-| `rating` | int | ❌ | Self-rating (stored in `task_remarks`) |
-| `learnings` | string | ❌ | Key learnings (stored in `task_remarks`) |
-| `challenges_faced` | string | ❌ | Challenges faced (stored in `task_remarks`) |
-| `next_week_plan` | string | ❌ | Plan for next week (stored in `task_remarks`) |
-| `week_start_date` | date | ❌ | Defaults to current week's Monday |
-
-**Response `200 OK`**
-```json
-{ "hasError": false, "statusCode": 200, "message": "Weekly review submitted successfully." }
-```
-
-**Error `409 Conflict`** — review already exists for this week
-```json
-{ "hasError": true, "statusCode": 409, "message": "Review for this week already exists." }
-```
-
----
-
-### 3.4 `PATCH /reviews/<review_id>/`
-
-Edit a pending review, but **only for the current ISO week**.
-
-**Request**
-```http
-PATCH /api/v1/dashboard/intern/reviews/rev-uuid-0001/
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-```json
-{
-  "blockers": "Encountered a DB migration conflict",
-  "suggestions": "Need better local dev setup docs",
-  "rating": 5
-}
-```
-
-**Response `200 OK`**
-```json
-{ "hasError": false, "statusCode": 200, "message": "Weekly review updated successfully." }
-```
-
-**Error `400`** — wrong week or not pending
-```json
-{ "hasError": true, "statusCode": 400, "message": "Cannot edit reviews for past weeks." }
-```
-
----
-
-### 3.5 `GET /reviews/current/`
-
-Retrieve the current week's submitted review.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/reviews/current/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`** — same shape as a single review.
-
-**Error `400`**
-```json
-{ "hasError": true, "statusCode": 400, "message": "No review submitted for the current week." }
-```
-
----
-
-### 3.6 `GET /reviews/history/`
-
-Retrieve paginated review history (sorted by year and week descending).
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/reviews/history/?page=1&perPage=10
-Authorization: Bearer <token>
-```
-
-**Response** — same paginated shape as `GET /reviews/`
-
----
-
-## 4. Tasks
-
-Base path: `/api/v1/dashboard/intern/tasks/`
-
-### 4.1 `GET /tasks/mine/`
-
-Retrieve all tasks assigned to the authenticated intern.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/tasks/mine/?page=1&perPage=10
-Authorization: Bearer <token>
-```
-
-**Query Parameters**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `search` | string | Search by `title`, `status`, or `category` |
-| `sortBy` | string | `created_at` (default) or `status` |
-| `sortOrder` | string | `asc` / `desc` |
-
-**Response `200 OK`**
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Successful",
-  "response": {
-    "data": [
-      {
-        "id": "task-uuid-0099",
-        "title": "Build leave management API",
-        "description": "Create CRUD endpoints for intern leave requests",
-        "category": "DEVELOPMENT",
-        "complexity": "HIGH",
-        "assigned_to": "user-uuid-intern-001",
-        "assigned_to_name": "Arun Dev",
+        "id": "task-uuid",
+        "title": "Build Auth API endpoint",
+        "description": "Create JWT login/logout API",
+        "category": "Auth API",
+        "complexity": "MEDIUM",
+        "assigned_to": "user-uuid",
+        "assigned_to_name": "Alice Johnson",
         "status": "IN_PROGRESS",
         "karma_awarded": 0,
         "output_link": null,
         "is_verified": false,
         "verified_by": null,
-        "created_by": "user-uuid-mentor-001",
-        "created_by_name": "Priya Mentor",
-        "created_at": "2024-05-28T10:00:00Z",
-        "updated_at": "2024-06-03T14:30:00Z"
+        "created_by": "admin-uuid",
+        "created_by_name": "Admin Name",
+        "created_at": "2025-06-01T09:00:00Z",
+        "updated_at": "2025-06-05T11:00:00Z"
       }
     ],
-    "pagination": {
-      "count": 4,
-      "totalPages": 1,
-      "isNext": false,
-      "isPrev": false,
-      "nextPage": null
-    }
+    "pagination": { "count": 5, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
   }
 }
 ```
 
 ---
 
-### 4.2 `PATCH /tasks/<task_id>/`
+#### `GET /api/v1/dashboard/intern/tasks/<task_id>/detail/`
+**Description:** Retrieve a single task detail.  
+**Required Role:** `Intern`
 
-Update the status of a specific assigned task. Note that you cannot edit a task that has already been verified by an admin.
+**Path Param:** `task_id` — UUID of the task
 
-**Request**
-```http
-PATCH /api/v1/dashboard/intern/tasks/task-uuid-0099/
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
+**Response `200 OK`:**
 ```json
 {
-  "status": "COMPLETED",
-  "output_link": "https://github.com/my-repo/pr-123"
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "id": "task-uuid",
+    "title": "Build Auth API endpoint",
+    "description": "Create JWT login/logout API",
+    "category": "Auth API",
+    "complexity": "MEDIUM",
+    "assigned_to": "user-uuid",
+    "assigned_to_name": "Alice Johnson",
+    "status": "IN_PROGRESS",
+    "karma_awarded": 0,
+    "output_link": null,
+    "is_verified": false,
+    "verified_by": null,
+    "created_by": "admin-uuid",
+    "created_by_name": "Admin Name",
+    "created_at": "2025-06-01T09:00:00Z",
+    "updated_at": "2025-06-05T11:00:00Z"
+  }
 }
 ```
 
-**Valid status values:** `TODO`, `IN_PROGRESS`, `COMPLETED`, `ON_HOLD`, `OVERDUE`
+**Failure `400`** — Task not found or not assigned to the requesting intern.
 
-**Response `200 OK`**
+---
+
+#### `PATCH /api/v1/dashboard/intern/tasks/<task_id>/`
+**Alias:** `PATCH /api/v1/dashboard/intern/tasks/<task_id>/submit/` *(backward compat)*  
+**Description:** Directly update a task's status and/or output_link.  
+**Required Role:** `Intern`
+
+**Path Param:** `task_id` — UUID of the task
+
+**Request Body:**
 ```json
-{ "hasError": false, "statusCode": 200, "message": "Task status updated successfully." }
+{
+  "status": "COMPLETED",
+  "output_link": "https://github.com/user/repo/pull/42"
+}
 ```
 
-**Error `400`** — task not found
+| Field | Type | Required | Valid Values |
+|---|---|---|---|
+| `status` | string | Optional (one of both must be present) | `IN_PROGRESS`, `COMPLETED`, `ON_HOLD`, `WAITING_FOR_REVIEW` |
+| `output_link` | string | Required when `status=COMPLETED` | Any URL string |
+
+**Constraints:**
+- At least one of `status` or `output_link` must be provided.
+- Cannot modify a task that is already `is_verified = true`.
+- Status `COMPLETED` requires that `output_link` is set (either in request or already on the task).
+- Interns **cannot** set `NOT_STARTED` or `OVERDUE` (system-only statuses).
+- All changes are logged to `SystemActionLog` with `INTERN_TASK_UPDATE` action type.
+
+**Response `200 OK`:**
 ```json
-{ "hasError": true, "statusCode": 400, "message": "Task not found." }
+{
+  "statusCode": 6000,
+  "message": "Task status updated successfully.",
+  "response": {}
+}
 ```
 
-**Error `400`** — status missing
+**Failure `400`:**
 ```json
-{ "hasError": true, "statusCode": 400, "message": "Status is required." }
-```
-
-**Error `400`** — output_link missing when marking as COMPLETED
-```json
-{ "hasError": true, "statusCode": 400, "message": "output_link is required when completing a task." }
-```
-
-**Error `400`** — task is already verified
-```json
-{ "hasError": true, "statusCode": 400, "message": "Task is already verified and cannot be edited." }
+{
+  "statusCode": 6001,
+  "message": "output_link is required when marking a task as COMPLETED.",
+  "response": {}
+}
 ```
 
 ---
 
-## 5. Leave Management
+### 3. Timesheets
 
-Base path: `/api/v1/dashboard/intern/leave/`
+#### `GET /api/v1/dashboard/intern/timesheets/prefill/`
+**Description:** Retrieve tasks for the current ISO week to pre-populate the daily timesheet form.  
+**Required Role:** `Intern`
 
-### 5.1 `GET /leave/`
-
-Retrieve a paginated list of all the intern's leave requests.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/leave/?page=1&perPage=10
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
+**Response `200 OK` (active):**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "tasks": [
+      {
+        "task_id": "task-uuid",
+        "title": "Build Auth API endpoint",
+        "category": "Auth API",
+        "deadline": "2025-06-13",
+        "status": "IN_PROGRESS",
+        "complexity": "MEDIUM",
+        "output_link": null,
+        "is_overdue": false
+      }
+    ],
+    "on_leave": false
+  }
+}
+```
+
+**Response `200 OK` (on leave):**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "tasks": [],
+    "on_leave": true
+  }
+}
+```
+
+**Constraints:**
+- Excludes archived tasks and tasks that are `COMPLETED` + `is_verified`.
+- Returns `400` if intern status is `INACTIVE`.
+
+---
+
+#### `POST /api/v1/dashboard/intern/timesheets/`
+**Description:** Submit a new daily timesheet entry.  
+**Required Role:** `Intern`
+
+**Request Body:**
+```json
+{
+  "entry_date": "2025-06-10",
+  "description": "Worked on JWT auth endpoints and wrote unit tests.",
+  "hours": 6.5,
+  "blockers": "Encountered issues with token expiry handling.",
+  "end_of_day_note": "Will continue testing tomorrow.",
+  "edit_reason": null,
+  "task": [
+    {
+      "task_id": "task-uuid-1",
+      "status": "COMPLETED",
+      "remark": "PR raised and merged."
+    },
+    {
+      "task_id": "task-uuid-2",
+      "status": "IN_PROGRESS",
+      "remark": ""
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `entry_date` | date (`YYYY-MM-DD`) | ✅ | Cannot be a future date. Backdates > 1 day require `edit_reason`. |
+| `description` | string | ✅ | Summary of work done |
+| `hours` | float | ✅ | Must be > 0 |
+| `blockers` | string | ❌ | Optional |
+| `end_of_day_note` | string | ❌ | Optional |
+| `edit_reason` | string | Conditional | Required for late submissions (> yesterday) |
+| `task` | array | ❌ | Task status updates to snapshot in this timesheet |
+| `task[].task_id` | string (UUID) | ✅ if task array present | Must belong to the intern |
+| `task[].status` | string | ✅ | Any `InternTaskStatus` value |
+| `task[].remark` | string | ❌ | Optional note for this task update |
+
+**Constraints:**
+- Intern must be `ACTIVE` or `AT_RISK` (not `INACTIVE` or `ON_LEAVE`).
+- `task_id` must be assigned to the requesting intern.
+- Cannot update a `is_verified = true` task.
+- Marking `status = COMPLETED` in a timesheet requires the task to already have `output_link` set (use the task submit endpoint first).
+- Duplicate `task_id` in the same submission is rejected.
+- Created with `status = PENDING` — requires admin approval.
+- A `409 Conflict` is returned if a timesheet for that `entry_date` already exists.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Timesheet submitted successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/intern/timesheets/`
+**Description:** Paginated list of the intern's timesheets.  
+**Required Role:** `Intern`  
+**Searchable:** `entry_date`, `status`  
+**Sortable by:** `entry_date`, `status`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
   "message": "Successful",
   "response": {
     "data": [
       {
-        "id": "leave-uuid-0001",
-        "leave_type": "SICK",
-        "start_date": "2024-06-10",
-        "end_date": "2024-06-11",
-        "reason": "Fever and cold",
+        "id": "timesheet-uuid",
+        "entry_date": "2025-06-10",
+        "task": [
+          {
+            "task_id": "task-uuid-1",
+            "title": "Build Auth API endpoint",
+            "status": "COMPLETED",
+            "remark": "PR raised and merged."
+          }
+        ],
+        "description": "Worked on JWT auth endpoints.",
+        "hours": 6.5,
+        "blockers": "None",
+        "end_of_day_note": "Will continue tomorrow.",
+        "edit_reason": null,
         "status": "PENDING",
         "review_note": null,
-        "created_at": "2024-06-09T08:00:00Z"
+        "created_at": "2025-06-10T18:00:00Z"
       }
     ],
-    "pagination": {
-      "count": 3,
-      "totalPages": 1,
-      "isNext": false,
-      "isPrev": false,
-      "nextPage": null
-    }
+    "pagination": { "count": 12, "totalPages": 2, "isNext": true, "isPrev": false, "nextPage": 2 }
   }
 }
 ```
 
 ---
 
-### 5.2 `GET /leave/<leave_id>/`
+#### `GET /api/v1/dashboard/intern/timesheets/<timesheet_id>/`
+**Description:** Retrieve a specific timesheet by ID.  
+**Required Role:** `Intern`
 
-Retrieve a single leave request by ID.
+**Path Param:** `timesheet_id` — UUID  
+**Response:** Same shape as single item in list above.
 
-**Request**
-```http
-GET /api/v1/dashboard/intern/leave/leave-uuid-0001/
-Authorization: Bearer <token>
-```
+---
 
-**Response `200 OK`**
+#### `PATCH /api/v1/dashboard/intern/timesheets/<timesheet_id>/`
+**Description:** Edit the `end_of_day_note` on a pending timesheet.  
+**Required Role:** `Intern`
+
+**Request Body:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "end_of_day_note": "Updated note: completed the testing phase.",
+  "edit_reason": "Forgot to include final test results."
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `edit_reason` | string | ✅ | Mandatory for all modifications |
+| `end_of_day_note` | string | ✅ | Only editable field |
+
+**Constraints:**
+- Only works on timesheets with `status = PENDING`.
+- `edit_reason` is mandatory.
+- Changes are logged to `SystemActionLog` with `INTERN_TIMESHEET_EDIT` action type.
+
+---
+
+#### `GET /api/v1/dashboard/intern/timesheets/today/`
+**Description:** Retrieve today's timesheet entry.  
+**Required Role:** `Intern`
+
+**Response:** Same shape as single timesheet. Returns `400` if none submitted today.
+
+---
+
+#### `GET /api/v1/dashboard/intern/timesheets/history/`
+**Description:** Paginated timesheet history (alias of the list endpoint).  
+**Required Role:** `Intern`  
+Same response shape as the list endpoint.
+
+---
+
+#### `GET /api/v1/dashboard/intern/timesheets/summary/`
+**Description:** Retrieve current timesheet streak stats.  
+**Required Role:** `Intern`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
   "message": "Successful",
   "response": {
-    "id": "leave-uuid-0001",
-    "leave_type": "SICK",
-    "start_date": "2024-06-10",
-    "end_date": "2024-06-11",
-    "reason": "Fever and cold",
-    "status": "PENDING",
-    "review_note": null,
-    "created_at": "2024-06-09T08:00:00Z"
+    "current_streak": 7,
+    "longest_streak": 14
   }
 }
 ```
 
 ---
 
-### 5.3 `POST /leave/`
+### 4. Weekly Reviews
 
-Submit a new leave request.
+#### `GET /api/v1/dashboard/intern/reviews/prefill/`
+**Description:** Retrieve this week's task snapshot to pre-populate the weekly review form.  
+**Required Role:** `Intern`
 
-**Request**
-```http
-POST /api/v1/dashboard/intern/leave/
-Authorization: Bearer <token>
-Content-Type: application/json
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "iso_year": 2025,
+    "iso_week": 24,
+    "week_start": "2025-06-09",
+    "week_end": "2025-06-15",
+    "tasks": [
+      {
+        "task_id": "task-uuid-1",
+        "title": "Build Auth API endpoint",
+        "category": "Auth API",
+        "complexity": "MEDIUM",
+        "deadline": "2025-06-13",
+        "status": "COMPLETED",
+        "output_link": "https://github.com/user/repo/pull/42"
+      }
+    ]
+  }
+}
 ```
 
+---
+
+#### `POST /api/v1/dashboard/intern/reviews/`
+**Description:** Submit a new weekly review.  
+**Required Role:** `Intern`
+
+**Request Body:**
+```json
+{
+  "is_on_leave": false,
+  "hours_committed": 40,
+  "weekly_review": "Completed the JWT auth module and started on role-based access control.",
+  "blockers": "Waiting for design finalization on the dashboard page.",
+  "leave_days": 0,
+  "suggestions": "Would love a dedicated code review session.",
+  "team": "Backend Guild",
+  "week_start_date": "2025-06-09",
+  "rating": 4,
+  "next_week_plan": "Finish RBAC and write integration tests.",
+  "challenges_faced": "Debugging token refresh logic took longer than expected.",
+  "learnings": "Learned about JWT expiry best practices."
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `is_on_leave` | boolean | ❌ | Defaults to `false` |
+| `hours_committed` | float | Conditional | Required when `is_on_leave = false`, must be > 0 |
+| `weekly_review` | string | ❌ | Auto-generated from `learnings`, `challenges_faced`, `next_week_plan` if omitted |
+| `blockers` | string | ❌ | Optional |
+| `leave_days` | int | ❌ | Optional |
+| `suggestions` | string | ❌ | Optional |
+| `team` | string | ❌ | Auto-populated from guild link if omitted |
+| `week_start_date` | date | ❌ | Defaults to current week |
+| `rating` | int (1-5) | ❌ | Stored in `task_remarks.rating` |
+| `next_week_plan` | string | ❌ | Stored in `task_remarks.next_week_plan` |
+| `challenges_faced` | string | ❌ | Stored in `task_remarks.challenges_faced` |
+| `learnings` | string | ❌ | Stored in `task_remarks.learnings` |
+
+**Constraints:**
+- Intern must be `ACTIVE` or `AT_RISK`.
+- One review per ISO week — `409` if already submitted.
+- `tasks_completed` is auto-populated from `InternTask` records with status `COMPLETED` or `WAITING_FOR_REVIEW` for the current week.
+- A review submitted after Sunday of that week is marked `is_late = true`.
+- Created with `status = PENDING`.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Weekly review submitted successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/intern/reviews/`
+**Description:** Paginated list of all weekly reviews.  
+**Required Role:** `Intern`  
+**Searchable:** `iso_year`, `iso_week`, `status`  
+**Sortable by:** `iso_year`, `iso_week`, `status`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "id": "review-uuid",
+        "iso_year": 2025,
+        "iso_week": 24,
+        "week_start_date": "2025-06-09",
+        "week_end_date": "2025-06-15",
+        "team": "Backend Guild",
+        "is_on_leave": false,
+        "tasks_assigned": {},
+        "tasks_completed": [
+          {
+            "task_id": "task-uuid-1",
+            "title": "Build Auth API endpoint",
+            "category": "Auth API",
+            "complexity": "MEDIUM",
+            "deadline": "2025-06-13",
+            "final_status": "COMPLETED",
+            "output_link": "https://github.com/user/repo/pull/42"
+          }
+        ],
+        "weekly_review": "Completed JWT module.",
+        "task_remarks": {
+          "rating": 4,
+          "next_week_plan": "Finish RBAC.",
+          "challenges_faced": "Token refresh logic.",
+          "learnings": "JWT best practices."
+        },
+        "hours_committed": 40,
+        "blockers": "Waiting for design.",
+        "leave_days": 0,
+        "suggestions": "Code review sessions.",
+        "is_late": false,
+        "status": "PENDING",
+        "review_note": null,
+        "created_at": "2025-06-15T18:00:00Z"
+      }
+    ],
+    "pagination": { "count": 5, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
+  }
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/intern/reviews/<review_id>/`
+**Description:** Retrieve a single weekly review by ID.  
+**Required Role:** `Intern`  
+**Response:** Same as single item in list above.
+
+---
+
+#### `PATCH /api/v1/dashboard/intern/reviews/<review_id>/`
+**Description:** Edit a pending weekly review (current week only).  
+**Required Role:** `Intern`
+
+**Request Body:** Any subset of the POST fields (partial update).
+
+**Constraints:**
+- Review must be `status = PENDING`.
+- Review must be for the **current ISO week** — past weeks cannot be edited.
+
+---
+
+#### `GET /api/v1/dashboard/intern/reviews/current/`
+**Description:** Retrieve the current week's submitted review.  
+**Required Role:** `Intern`  
+Returns `400` with `"No review submitted for the current week."` if none exists.
+
+---
+
+#### `GET /api/v1/dashboard/intern/reviews/history/`
+**Description:** Paginated review history (alias of list endpoint).  
+**Required Role:** `Intern`
+
+---
+
+### 5. Leave
+
+#### `POST /api/v1/dashboard/intern/leave/`
+**Description:** Submit a new leave request.  
+**Required Role:** `Intern`
+
+**Request Body:**
 ```json
 {
   "leave_type": "SICK",
-  "start_date": "2024-06-10",
-  "end_date": "2024-06-11",
-  "reason": "High fever, doctor advised rest"
+  "start_date": "2025-06-18",
+  "end_date": "2025-06-19",
+  "reason": "Fever and doctor's appointment.",
+  "duration_days": 2
 }
 ```
 
-**Leave types**
-
-| Type | Period Limit | Description |
-|------|-------------|-------------|
-| `SICK` | 2 days / month | Sick leave |
-| `CASUAL` | 1 day / month | Casual/personal leave |
-| `WFH` | 2 days / week | Work from home |
-| `EMERGENCY` | Unlimited | Emergency leave |
-
-**Fields**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `leave_type` | string | ✅ | One of `SICK`, `CASUAL`, `WFH`, `EMERGENCY` |
-| `start_date` | date (`YYYY-MM-DD`) | ✅ | Leave start date |
-| `end_date` | date (`YYYY-MM-DD`) | ✅ | Leave end date (must be ≥ `start_date`) |
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `leave_type` | string | ✅ | `SICK`, `CASUAL`, `EMERGENCY`, `WFH` |
+| `start_date` | date | ✅ | `YYYY-MM-DD` |
+| `end_date` | date | ✅ | Must be ≥ `start_date` |
 | `reason` | string | ✅ | Reason for leave |
-| `duration_days` | int | ❌ | Auto-calculated if omitted |
+| `duration_days` | int | ❌ | Auto-calculated as `(end - start).days + 1` if not provided |
 
-**Response `200 OK`**
-```json
-{ "hasError": false, "statusCode": 200, "message": "Leave request submitted successfully." }
-```
+**Constraints:**
+- `start_date` must be ≤ `end_date`.
+- No overlapping `PENDING` or `APPROVED` leaves allowed for the same date range.
+- Created with `status = PENDING`.
+- Action is logged to `SystemActionLog` with `INTERN_LEAVE_REQUEST` action type.
 
-**Error `400`** — validation failure
+**Response `200 OK`:**
 ```json
 {
-  "hasError": true,
-  "statusCode": 400,
-  "message": { "start_date": ["Start date must be before or equal to end date."] }
+  "statusCode": 6000,
+  "message": "Leave request submitted successfully.",
+  "response": {}
 }
 ```
 
 ---
 
-### 5.4 `PATCH /leave/<leave_id>/` — Cancel Leave
+#### `GET /api/v1/dashboard/intern/leave/`
+**Description:** Paginated list of all leave requests.  
+**Required Role:** `Intern`  
+**Searchable:** `leave_type`, `status`  
+**Sortable by:** `created_at`, `status`
 
-Cancel a pending leave request.
-
-**Request**
-```http
-PATCH /api/v1/dashboard/intern/leave/leave-uuid-0001/
-Authorization: Bearer <token>
-Content-Type: application/json
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "id": "leave-uuid",
+        "leave_type": "SICK",
+        "start_date": "2025-06-18",
+        "end_date": "2025-06-19",
+        "reason": "Fever and doctor's appointment.",
+        "status": "PENDING",
+        "review_note": null,
+        "created_at": "2025-06-17T09:00:00Z"
+      }
+    ],
+    "pagination": { "count": 3, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
+  }
+}
 ```
 
+---
+
+#### `GET /api/v1/dashboard/intern/leave/<leave_id>/`
+**Description:** Retrieve a specific leave request.  
+**Required Role:** `Intern`  
+**Response:** Same as single item in list above.
+
+---
+
+#### `PATCH /api/v1/dashboard/intern/leave/<leave_id>/`
+**Description:** Cancel a pending leave request.  
+**Required Role:** `Intern`
+
+**Request Body:**
 ```json
 {
   "action": "cancel"
 }
 ```
 
-**Response `200 OK`**
-```json
-{ "hasError": false, "statusCode": 200, "message": "Leave request cancelled." }
-```
+**Constraints:**
+- Leave must be in `PENDING` status.
+- Only `"cancel"` is a valid action from the intern side.
 
-**Error `400`** — not found or not in PENDING state
-```json
-{ "hasError": true, "statusCode": 400, "message": "Pending leave request not found." }
-```
-
-**Error `400`** — invalid action
-```json
-{ "hasError": true, "statusCode": 400, "message": "Invalid action." }
-```
-
----
-
-### 5.5 `GET /leave/history/`
-
-Retrieve paginated leave history (same response as `GET /leave/`).
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/leave/history/?page=1&perPage=10
-Authorization: Bearer <token>
-```
-
----
-
-### 5.6 `GET /leave/balance/`
-
-Retrieve the intern's leave balance for each leave type.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/leave/balance/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
+**Response `200 OK`:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "statusCode": 6000,
+  "message": "Leave request cancelled.",
+  "response": {}
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/intern/leave/history/`
+**Description:** Paginated leave history (alias of list endpoint).  
+**Required Role:** `Intern`
+
+---
+
+#### `GET /api/v1/dashboard/intern/leave/balance/`
+**Description:** Retrieve total approved leave days used per leave type.  
+**Required Role:** `Intern`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
   "message": "Successful",
   "response": {
-    "SICK": {
-      "limit": 2,
-      "used": 1,
-      "remaining": 1,
-      "period": "month"
-    },
-    "CASUAL": {
-      "limit": 1,
-      "used": 0,
-      "remaining": 1,
-      "period": "month"
-    },
-    "WFH": {
-      "limit": 2,
-      "used": 2,
-      "remaining": 0,
-      "period": "week"
-    },
-    "EMERGENCY": {
-      "limit": null,
-      "used": 1,
-      "remaining": null,
-      "period": "unlimited"
-    }
+    "SICK": { "used": 2 },
+    "CASUAL": { "used": 1 },
+    "WFH": { "used": 5 },
+    "EMERGENCY": { "used": 0 }
   }
 }
 ```
 
 ---
 
-## 6. Leaderboard
+### 6. Leaderboard
 
-Base path: `/api/v1/dashboard/intern/leaderboard/`
+#### `GET /api/v1/dashboard/intern/leaderboard/`
+**Description:** Full paginated intern leaderboard with ranks.  
+**Required Role:** `Intern` or `Admin`
 
-**Roles:** Both `INTERN` and `ADMIN` can access the full leaderboard. Only `INTERN` can access the `me/` endpoint.
+**Query Params:** `page`, `page_size`
 
-### 6.1 `GET /leaderboard/`
-
-Retrieve the full paginated intern leaderboard, sorted by score (descending).
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/leaderboard/?page=1&page_size=10
-Authorization: Bearer <token>
-```
-
-**Query Parameters**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | int | `1` | Page number |
-| `page_size` | int | `10` | Items per page |
-
-**Response `200 OK`**
+**Response `200 OK`:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "statusCode": 6000,
   "message": "Successful",
   "response": {
     "data": [
       {
-        "user_id": "a1b2c3d4-0000-0000-0000-000000000001",
-        "full_name": "Arjun Nair",
-        "guild": "BACKEND",
-        "score": 2100.0,
+        "user_id": "uuid-1",
+        "full_name": "Alice Johnson",
+        "guild": "Frontend Guild",
+        "score": 3200,
         "rank": 1
       },
       {
-        "user_id": "a1b2c3d4-0000-0000-0000-000000000002",
-        "full_name": "Meera Pillai",
-        "guild": "DESIGN",
-        "score": 1850.0,
+        "user_id": "uuid-2",
+        "full_name": "Bob Kumar",
+        "guild": "Backend Guild",
+        "score": 2750,
         "rank": 2
       }
     ],
     "pagination": {
-      "count": 12,
+      "count": 14,
       "totalPages": 2,
       "isNext": true,
       "isPrev": false,
@@ -1019,138 +948,729 @@ Authorization: Bearer <token>
 }
 ```
 
-**Score Formula:**
-```
-score = (
-    approved_daily_timesheets_count * 25 +
-    approved_weekly_reviews_count * 50 +
-    complexity_score * verified_intern_tasks_karma_sum
-)
-```
-
-**Complexity score mapping:** `LOW=1`, `MEDIUM=2`, `HIGH=3`, `CRITICAL=5`
+**Constraints:**
+- Only `ACTIVE`, `AT_RISK`, and `ON_LEAVE` interns are included.
+- Score = `(approved_timesheets × 25) + (approved_weekly_reviews × 50) + sum(verified_task.karma_awarded × complexity_weight)`.
 
 ---
 
-### 6.2 `GET /leaderboard/me/`
+#### `GET /api/v1/dashboard/intern/leaderboard/me/`
+**Description:** Retrieve the current intern's rank and score.  
+**Required Role:** `Intern`
 
-Retrieve the authenticated intern's own rank and score on the leaderboard.
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/leaderboard/me/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
+**Response `200 OK`:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "statusCode": 6000,
   "message": "Successful",
   "response": {
-    "rank": 4,
-    "score": 1420.0
+    "rank": 3,
+    "score": 2100
   }
 }
 ```
 
-**Error `400`**
-```json
-{ "hasError": true, "statusCode": 400, "message": "Not found in leaderboard." }
-```
-
-> Note: Only `ACTIVE` and `AT_RISK` interns appear in the leaderboard. `INACTIVE` interns will receive the not-found error.
-
----
-
-## 7. Guilds
-
-Base path: `/api/v1/dashboard/intern/`
-
-### 7.1 `GET /guilds/`
-
-Retrieve all available intern guild names.
-
-**Roles:** `INTERN` or `ADMIN`
-
-**Request**
-```http
-GET /api/v1/dashboard/intern/guilds/
-Authorization: Bearer <token>
-```
-
-**Response `200 OK`**
+**Failure `400`:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
-  "message": "Successful",
-  "response": ["BACKEND", "FRONTEND", "DESIGN", "DEVOPS", "DATA", "QA"]
+  "statusCode": 6001,
+  "message": "Not found in leaderboard.",
+  "response": {}
 }
 ```
 
 ---
 
-## 8. Common Patterns
+### 7. Guilds
 
-### Authentication Header
-```http
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
+#### `GET /api/v1/dashboard/intern/guilds/`
+**Description:** Retrieve all available guild values.  
+**Required Role:** `Intern` or `Admin`
 
-### Pagination Query Parameters
-
-All paginated list endpoints accept:
-
-| Parameter | Description |
-|-----------|-------------|
-| `page` | Page number (default: `1`) |
-| `perPage` | Items per page (default: `10`) |
-| `search` | Search string |
-| `sortBy` | Field to sort by |
-| `sortOrder` | `asc` or `desc` (default: `desc`) |
-
-### Standard Success Response
+**Response `200 OK`:**
 ```json
 {
-  "hasError": false,
-  "statusCode": 200,
+  "statusCode": 6000,
   "message": "Successful",
-  "response": { ... }
+  "response": ["Frontend Guild", "Backend Guild", "Design Guild", "Mobile Guild"]
 }
 ```
 
-### Standard Error Response
+---
+
+---
+
+## Part 2 — Intern Management (Role: Admin)
+
+> **Base prefix:** `/api/v1/dashboard/manage-interns/`
+
+---
+
+### 1. Interns CRUD
+
+#### `GET /api/v1/dashboard/manage-interns/interns/`
+**Description:** Paginated list of all interns.  
+**Required Role:** `Admin`  
+**Searchable:** `user__full_name`, `guild`, `status`  
+**Sortable by:** `created_at`, `status`
+
+**Response `200 OK`:**
 ```json
 {
-  "hasError": true,
-  "statusCode": 400,
-  "message": "Human readable error message."
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "id": "guild-link-uuid",
+        "user": "user-uuid",
+        "full_name": "Alice Johnson",
+        "muid": "AliceJohnson@mulearn",
+        "guild": "Backend Guild",
+        "status": "ACTIVE",
+        "created_at": "2025-06-01T09:00:00Z"
+      }
+    ],
+    "pagination": { "count": 14, "totalPages": 2, "isNext": true, "isPrev": false, "nextPage": 2 }
+  }
 }
 ```
 
-### Leave & Review Statuses
+---
 
-| Status | Description |
-|--------|-------------|
-| `PENDING` | Submitted, awaiting mentor review |
-| `APPROVED` | Approved by mentor |
-| `REJECTED` | Rejected by mentor |
-| `CANCELLED` | Cancelled by intern |
+#### `GET /api/v1/dashboard/manage-interns/interns/<intern_id>/`
+**Description:** Retrieve a specific intern by their guild-link UUID.  
+**Required Role:** `Admin`  
+**Path Param:** `intern_id` — UUID of the `UserInternGuildLink` record.
 
-### Intern Status Values
+**Response:** Same as a single item in the list above.
 
-| Status | Description |
-|--------|-------------|
-| `ACTIVE` | Active intern |
-| `AT_RISK` | Intern flagged as at risk |
-| `INACTIVE` | Inactive/offboarded intern |
+---
 
-### Timesheet / Review Submission Status
+#### `POST /api/v1/dashboard/manage-interns/interns/`
+**Description:** Onboard a new intern.  
+**Required Role:** `Admin`
 
-| Status | Description |
-|--------|-------------|
-| `PENDING` | Submitted, awaiting mentor review |
-| `APPROVED` | Approved and karma awarded |
-| `REJECTED` | Rejected by mentor |
+**Request Body (by muid):**
+```json
+{
+  "mu_id": "AliceJohnson@mulearn",
+  "guild": "Backend Guild",
+  "status": "ACTIVE"
+}
+```
+
+**Request Body (by user_id):**
+```json
+{
+  "user_id": "user-uuid",
+  "guild": "Backend Guild",
+  "status": "ACTIVE"
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `mu_id` | string | Conditional | MuLearn ID. Required if `user_id` not provided. |
+| `user_id` | string (UUID) | Conditional | Required if `mu_id` not provided. |
+| `guild` | string | ✅ | One of the `InternGuild` values |
+| `status` | string | ❌ | Defaults to `ACTIVE` |
+
+**Constraints:**
+- Either `mu_id` or `user_id` must be provided.
+- User must exist in the system.
+- User must not already be an intern.
+- Automatically assigns the `Intern` role to the user via `UserRoleLink`.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Intern onboarded successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `PATCH /api/v1/dashboard/manage-interns/interns/<intern_id>/`
+**Description:** Update intern details (partial update — guild, status).  
+**Required Role:** `Admin`
+
+**Request Body:**
+```json
+{
+  "guild": "Frontend Guild",
+  "status": "AT_RISK"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `guild` | string | Any valid `InternGuild` value |
+| `status` | string | Any valid `InternGuildStatus` value |
+
+**Constraints:**
+- Guild reassignments are logged to `SystemActionLog` with `INTERN_GUILD_REASSIGN` action type.
+- Changing status to `INACTIVE` removes the `Intern` role from the user.
+- Changing status from `INACTIVE` to any other re-assigns the `Intern` role.
+- Transitioning out of `ON_LEAVE` clears `previous_status`.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Intern details updated successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `DELETE /api/v1/dashboard/manage-interns/interns/<intern_id>/`
+**Description:** Deactivate (soft-delete) an intern.  
+**Required Role:** `Admin`
+
+**Constraints:**
+- Sets `status = INACTIVE` (no hard delete).
+- Removes the `Intern` role from `UserRoleLink` in an atomic transaction.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Intern deactivated successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/manage-interns/status/`
+**Description:** Retrieve intern count statistics by status.  
+**Required Role:** `Admin`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "ACTIVE": 10,
+    "AT_RISK": 2,
+    "ON_LEAVE": 1,
+    "INACTIVE": 3,
+    "total_interns": 16
+  }
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/manage-interns/interns/export/`
+**Description:** Export all interns as a CSV file.  
+**Required Role:** `Admin`
+
+**Response:** `Content-Type: text/csv` attachment (`interns.csv`)
+
+```
+Full Name,MuID,Guild,Status,Created At
+Alice Johnson,AliceJohnson@mulearn,Backend Guild,ACTIVE,2025-06-01 09:00:00
+Bob Kumar,BobKumar@mulearn,Frontend Guild,AT_RISK,2025-05-15 10:30:00
+```
+
+---
+
+### 2. Task Management
+
+#### `GET /api/v1/dashboard/manage-interns/tasks/`
+**Description:** Paginated list of all intern tasks.  
+**Required Role:** `Admin`  
+**Searchable:** `title`, `status`, `category`, `assigned_to__full_name`  
+**Sortable by:** `created_at`, `status`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "id": "task-uuid",
+        "title": "Build Auth API endpoint",
+        "description": "Create JWT login/logout API",
+        "category": "Auth API",
+        "complexity": "MEDIUM",
+        "assigned_to": "user-uuid",
+        "status": "IN_PROGRESS",
+        "team": "Backend Guild",
+        "deadline": "2025-06-13",
+        "iso_week": 24,
+        "created_at": "2025-06-01T09:00:00Z"
+      }
+    ],
+    "pagination": { "count": 22, "totalPages": 3, "isNext": true, "isPrev": false, "nextPage": 2 }
+  }
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/manage-interns/tasks/<task_id>/`
+**Description:** Retrieve a specific task.  
+**Required Role:** `Admin`  
+**Response:** Same as a single item in list above.
+
+---
+
+#### `POST /api/v1/dashboard/manage-interns/tasks/`
+**Description:** Create a new intern task.  
+**Required Role:** `Admin`
+
+**Request Body:**
+```json
+{
+  "title": "Build Auth API endpoint",
+  "description": "Create JWT login and logout REST API with refresh token support.",
+  "category": "Auth API",
+  "complexity": "MEDIUM",
+  "assigned_to": "AliceJohnson@mulearn",
+  "deadline": "2025-06-20",
+  "team": "Backend Guild",
+  "iso_week": 25
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `title` | string | ✅ | Task name |
+| `description` | string | ✅ | Detailed task description |
+| `category` | string | ✅ | Any valid `InternTaskCategory` sub-category |
+| `complexity` | string | ✅ | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
+| `assigned_to` | string | ✅ | Accepts `muid` (e.g. `AliceJohnson@mulearn`) or a UUID |
+| `deadline` | date | ✅ | `YYYY-MM-DD` |
+| `team` | string | ❌ | Guild for this task (write-only alias of `team` field) |
+| `iso_week` | int | ❌ | Auto-derived from `deadline` if omitted |
+
+**Constraints:**
+- `assigned_to` resolves by `muid` first, then by UUID.
+- `iso_week` is auto-calculated from `deadline.isocalendar()[1]` if not provided.
+- Initial status defaults to `NOT_STARTED`.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Task created successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `PATCH /api/v1/dashboard/manage-interns/tasks/<task_id>/`
+**Description:** Partially update an intern task.  
+**Required Role:** `Admin`
+
+**Request Body (any subset of create fields):**
+```json
+{
+  "complexity": "HIGH",
+  "deadline": "2025-06-25",
+  "status": "ON_HOLD"
+}
+```
+
+**Constraints:**
+- Cannot edit tasks that are `is_verified = true`.
+- Changes to `title`, `description`, `category`, `complexity`, `assigned_to_id`, `status` are logged to `SystemActionLog`.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Task updated successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `DELETE /api/v1/dashboard/manage-interns/tasks/<task_id>/`
+**Description:** Hard-delete an intern task.  
+**Required Role:** `Admin`
+
+**Constraints:**
+- Cannot delete verified tasks (`is_verified = true`). Revoke verification first.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Task deleted successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/manage-interns/tasks/by-intern/<muid>/`
+**Description:** Retrieve all tasks assigned to a specific intern, identified by their muid.  
+**Required Role:** `Admin`  
+**Path Param:** `muid` — MuLearn ID of the intern  
+**Searchable:** `title`, `status`, `category`  
+**Sortable by:** `created_at`, `status`, `deadline`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "data": [ /* same shape as task list */ ],
+    "pagination": { "count": 5, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
+  }
+}
+```
+
+---
+
+#### `POST /api/v1/dashboard/manage-interns/tasks/<task_id>/verify/`
+**Description:** Verify a completed task and award karma to the intern.  
+**Required Role:** `Admin`
+
+**Request Body:**
+```json
+{
+  "karma_awarded": 50
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `karma_awarded` | int | ✅ | Must be a non-negative integer |
+
+**Constraints:**
+- Task must not already be `is_verified = true`.
+- If `karma_awarded > 0` and a `TaskList` with hashtag `#intern-task-verified` exists, a `KarmaActivityLog` is created and the intern's `Wallet` balance is incremented atomically.
+- Action is logged to `SystemActionLog` with `INTERN_TASK_UPDATE` action type.
+- All DB operations are wrapped in an atomic transaction.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Task verified successfully.",
+  "response": {}
+}
+```
+
+**Failure `400`:**
+```json
+{
+  "statusCode": 6001,
+  "message": "Task is already verified.",
+  "response": {}
+}
+```
+
+---
+
+### 3. Timesheet & Review Administration
+
+#### `GET /api/v1/dashboard/manage-interns/reviews/timesheets/`
+**Description:** List all intern timesheets (filterable by status).  
+**Required Role:** `Admin`  
+**Query Param:** `status` — optional filter (`PENDING`, `APPROVED`, `REJECTED`)  
+**Searchable:** `user__full_name`, `status`  
+**Sortable by:** `created_at`, `status`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "id": "timesheet-uuid",
+        "user_id": "user-uuid",
+        "user_name": "Alice Johnson",
+        "muid": "AliceJohnson@mulearn",
+        "entry_date": "2025-06-10",
+        "task": [
+          {
+            "task_id": "task-uuid-1",
+            "title": "Build Auth API endpoint",
+            "status": "COMPLETED",
+            "remark": "PR merged."
+          }
+        ],
+        "description": "Worked on JWT auth endpoints.",
+        "hours": 6.5,
+        "blockers": "None",
+        "end_of_day_note": "Will continue tomorrow.",
+        "edit_reason": null,
+        "status": "PENDING",
+        "review_note": null,
+        "created_at": "2025-06-10T18:00:00Z"
+      }
+    ],
+    "pagination": { "count": 30, "totalPages": 3, "isNext": true, "isPrev": false, "nextPage": 2 }
+  }
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/manage-interns/reviews/timesheets/<timesheet_id>/review/`
+**Description:** Retrieve a single timesheet for review.  
+**Required Role:** `Admin`  
+**Response:** Same shape as single item above.
+
+---
+
+#### `PATCH /api/v1/dashboard/manage-interns/reviews/timesheets/<timesheet_id>/review/`
+**Description:** Approve or reject a timesheet.  
+**Required Role:** `Admin`
+
+**Request Body:**
+```json
+{
+  "action": "approve",
+  "review_note": "Good detailed log."
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `action` | string | ✅ | `"approve"` or `"reject"` |
+| `review_note` | string | ❌ | Optional feedback. Stored on record. |
+
+**Constraints / Side effects on Approval:**
+- Timesheet must be `status = PENDING`.
+- On **approve**:
+  - Updates `UserStreak` (`streak_type = intern_timesheet`) with consecutive-day logic (skips weekends: Fri→Mon counts as consecutive).
+  - Awards karma via `KarmaActivityLog` based on streak multiplier:
+    - streak ≥ 30: `2.0×` multiplier
+    - streak ≥ 14: `1.5×` multiplier
+    - streak ≥ 7: `1.2×` multiplier
+    - otherwise: `1.0×`
+  - Awards milestone streak bonuses at streaks 7, 14, 30, 60, 90 (separate karma logs).
+  - Updates intern's `Wallet` balance atomically.
+  - If intern status is `AT_RISK` → restored to `ACTIVE`.
+- All wrapped in atomic transaction.
+
+**Streak Milestones:**
+| Streak Days | Bonus Karma | Hashtag |
+|---|---|---|
+| 7 | 7 | `#intern-streak-7` |
+| 14 | 14 | `#intern-streak-14` |
+| 30 | 30 | `#intern-streak-30` |
+| 60 | 60 | `#intern-streak-60` |
+| 90 | 90 | `#intern-streak-90` |
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Timesheet approved successfully.",
+  "response": {}
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/manage-interns/reviews/`
+**Description:** List all weekly reviews (filterable by status).  
+**Required Role:** `Admin`  
+**Query Param:** `status` — optional filter (`PENDING`, `APPROVED`, `REJECTED`)  
+**Searchable:** `user__full_name`, `status`, `team`  
+**Sortable by:** `created_at`, `status`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "id": "review-uuid",
+        "user_id": "user-uuid",
+        "user_name": "Alice Johnson",
+        "muid": "AliceJohnson@mulearn",
+        "iso_year": 2025,
+        "iso_week": 24,
+        "week_start_date": "2025-06-09",
+        "week_end_date": "2025-06-15",
+        "team": "Backend Guild",
+        "is_on_leave": false,
+        "tasks_assigned": {},
+        "tasks_completed": [ /* same shape as intern-side review list */ ],
+        "weekly_review": "Completed JWT module.",
+        "task_remarks": {
+          "rating": 4,
+          "next_week_plan": "Finish RBAC.",
+          "challenges_faced": "Token refresh logic.",
+          "learnings": "JWT best practices."
+        },
+        "hours_committed": 40,
+        "blockers": "Waiting for design.",
+        "leave_days": 0,
+        "suggestions": "Code review sessions.",
+        "is_late": false,
+        "status": "PENDING",
+        "review_note": null,
+        "created_at": "2025-06-15T18:00:00Z"
+      }
+    ],
+    "pagination": { "count": 12, "totalPages": 2, "isNext": true, "isPrev": false, "nextPage": 2 }
+  }
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/manage-interns/reviews/reviews/<review_id>/review/`
+**Description:** Retrieve a single weekly review for review.  
+**Required Role:** `Admin`  
+**Response:** Same shape as single item above.
+
+---
+
+#### `PATCH /api/v1/dashboard/manage-interns/reviews/reviews/<review_id>/review/`
+**Description:** Approve or reject a weekly review.  
+**Required Role:** `Admin`
+
+**Request Body:**
+```json
+{
+  "action": "approve",
+  "review_note": "Excellent weekly summary."
+}
+```
+
+| Field | Type | Required |
+|---|---|---|
+| `action` | string | ✅ (`"approve"` or `"reject"`) |
+| `review_note` | string | ❌ |
+
+**Constraints / Side effects on Approval:**
+- Review must be `status = PENDING`.
+- On **approve**:
+  - Updates `UserStreak` (`streak_type = intern_weekly_review`).
+  - Late reviews (`is_late = true`) reset `current_streak` to 0.
+  - Awards karma via `KarmaActivityLog` using `#intern-weekly-review` hashtag.
+  - Updates intern's `Wallet` balance atomically.
+- All wrapped in atomic transaction.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Weekly review approved successfully.",
+  "response": {}
+}
+```
+
+---
+
+### 4. Leave Administration
+
+#### `GET /api/v1/dashboard/manage-interns/leave/`
+**Description:** List all intern leave requests.  
+**Required Role:** `Admin`  
+**Searchable:** `user__full_name`, `leave_type`, `status`  
+**Sortable by:** `created_at`, `status`
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Successful",
+  "response": {
+    "data": [
+      {
+        "id": "leave-uuid",
+        "user_id": "user-uuid",
+        "user_name": "Alice Johnson",
+        "muid": "AliceJohnson@mulearn",
+        "leave_type": "SICK",
+        "start_date": "2025-06-18",
+        "end_date": "2025-06-19",
+        "reason": "Fever.",
+        "status": "PENDING",
+        "review_note": null,
+        "created_at": "2025-06-17T09:00:00Z"
+      }
+    ],
+    "pagination": { "count": 6, "totalPages": 1, "isNext": false, "isPrev": false, "nextPage": null }
+  }
+}
+```
+
+---
+
+#### `GET /api/v1/dashboard/manage-interns/leave/<leave_id>/`
+**Description:** Retrieve a single leave request.  
+**Required Role:** `Admin`  
+**Response:** Same as single item above.
+
+---
+
+#### `PATCH /api/v1/dashboard/manage-interns/leave/<leave_id>/review/`
+**Description:** Approve or reject an intern leave request.  
+**Required Role:** `Admin`
+
+**Request Body:**
+```json
+{
+  "action": "approve",
+  "review_note": "Approved. Get well soon."
+}
+```
+
+| Field | Type | Required |
+|---|---|---|
+| `action` | string | ✅ (`"approve"` or `"reject"`) |
+| `review_note` | string | ❌ |
+
+**Constraints / Side effects on Approval:**
+- Leave must be `status = PENDING`.
+- On **approve**:
+  - If today falls within `start_date`–`end_date`, the intern's `UserInternGuildLink.status` is set to `ON_LEAVE` and `previous_status` is preserved.
+- Action is logged to `SystemActionLog` with `INTERN_LEAVE_REVIEW` action type.
+- All DB changes wrapped in atomic transaction.
+
+**Response `200 OK`:**
+```json
+{
+  "statusCode": 6000,
+  "message": "Leave request approved successfully.",
+  "response": {}
+}
+```
+
+---
+
+## Standard Error Responses
+
+| HTTP Status | `statusCode` | When |
+|---|---|---|
+| `200` | `6000` | Success |
+| `400` | `6001` | Business logic failure, validation error |
+| `401` | `6003` | Missing or invalid JWT token |
+| `403` | `6004` | Role not authorized |
+| `409` | `6001` | Duplicate entry (e.g., timesheet/review for same date/week) |
+| `500` | `6002` | Unexpected server error |
+
+**Standard failure body:**
+```json
+{
+  "statusCode": 6001,
+  "message": "Error description here.",
+  "response": {}
+}
+```
