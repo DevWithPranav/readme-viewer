@@ -49,6 +49,7 @@ Returns a paginated list of active tasks visible to the caller. What a caller ca
 | `event_id` | UUID | Return only tasks linked to a specific event. Returns an empty result set if the caller does not have access to that event |
 | `is_event_task` | `true` | Return only tasks that are linked to any event the caller can access |
 | `event_tasks_only` | `true` | Alias for `is_event_task=true` |
+| `task_source` | enum | Filter tasks by who created them. See [Task Source Filter](#task-source-filter) for allowed values |
 
 > **Note:** `event_id`, `is_event_task`, and `event_tasks_only` are mutually exclusive. If `event_id` is provided the other two are ignored.
 
@@ -123,6 +124,21 @@ Visibility is determined by the task's `org` and `ig` fields, and the caller's m
 Event-linked tasks follow the event's own scope rules. An event task is visible if the event is:
 - Published or Ongoing, and
 - The event's scope permits the caller (Global events are open to all authenticated users; org/campus-scoped events follow the same membership rules as regular tasks)
+
+---
+
+## Task Source Filter
+
+The `task_source` query parameter lets you narrow results to tasks created by a specific type of contributor. It applies **after** the standard visibility rules — meaning a user can only see tasks they are already eligible to see.
+
+| `task_source` value | Tasks returned | Eligibility note |
+| :--- | :--- | :--- |
+| `company` | Tasks submitted by a verified company user | Company tasks are visible to all authenticated users |
+| `ig_mentor` | Tasks submitted by an approved IG mentor | Task has `ig` set → only visible to members of that IG |
+| `campus_mentor` | Tasks submitted by an approved campus mentor | Task has `ig` set → only visible to members of that IG |
+
+
+> **Important:** `task_source` does **not** bypass visibility rules. For example, `?task_source=ig_mentor` will only return IG mentor tasks that belong to an IG the caller is a member of. A user not in that IG will receive an empty result set — not an error.
 
 ---
 
@@ -274,9 +290,55 @@ Returns IG-specific tasks matching "react", sorted by karma descending, 20 per p
 
 ---
 
-## Notes
+### 8. Tasks submitted by companies
 
-- Only tasks with `active = true` are ever returned by this endpoint.
-- The `event` field is a legacy plain-string label and is retained for backward compatibility. For structured event queries, use `event_id` and the `event_id` / `is_event_task` filter parameters.
+```
+GET /api/v1/dashboard/task/list/?task_source=company
+```
+
+Returns only tasks created by verified company users. Visible to all authenticated users.
+
+---
+
+### 9. Tasks submitted by IG mentors
+
+```
+GET /api/v1/dashboard/task/list/?task_source=ig_mentor
+```
+
+Returns only tasks created by approved IG mentors. The caller will only see tasks belonging to IGs they are a member of — tasks from IGs they don't belong to are silently excluded.
+
+---
+
+### 10. Tasks submitted by campus mentors
+
+```
+GET /api/v1/dashboard/task/list/?task_source=campus_mentor
+```
+
+Returns only tasks created by approved campus mentors. IG membership rules still apply.
+
+---
+
+### 11. Platform-created tasks only
+
+```
+GET /api/v1/dashboard/task/list/?task_source=platform
+```
+
+Returns only tasks created directly by platform admins (no `requested_by` set).
+
+---
+
+### 12. IG mentor tasks for a specific IG
+
+```
+GET /api/v1/dashboard/task/list/?task_source=ig_mentor&ig_id=<ig-uuid>
+```
+
+Combines both filters — returns IG mentor tasks scoped to a specific IG. Caller must be a member of that IG.
+
+---
+
 - The `discord_id` field is sourced from the task's linked **channel**, not the task itself.
 - `org` is not exposed in the response payload — it is used internally to determine visibility only.
