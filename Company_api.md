@@ -822,6 +822,9 @@
 | **Role** |  Company creator or approved Company Mentor |
 | **Usage** | Create a new job or gig listing under the authenticated user's verified company. |
 
+> [!NOTE]
+> **`status` is not a field in the POST request body.** All newly created jobs automatically start with `status = Draft`. Use `PATCH /jobs/{job_id}/` to change the status to `Active` (or any other value) after creation.
+
 **Request Body — Full-Time Job:**
 
 ```json
@@ -832,7 +835,6 @@
   "location": "Kochi / Remote",
   "salary_range": "6-10 LPA",
   "job_type": "Full-Time",
-  "status": "Active",
   "certificate_provided": false,
   "rules": [
     { "rule_type": "min_karma", "rule_value": "500" },
@@ -850,7 +852,6 @@
   "job_description": "Design and build a responsive admin dashboard using React and Tailwind.",
   "location": "Remote",
   "job_type": "Gig",
-  "status": "Active",
   "duration_value": 2,
   "duration_unit": "Weeks",
   "hourly_rate": 500.00,
@@ -884,7 +885,7 @@
     "location": "Kochi / Remote",
     "salary_range": "6-10 LPA",
     "job_type": "Full-Time",
-    "status": "Active",
+    "status": "Draft",
     "duration_value": null,
     "duration_unit": null,
     "hourly_rate": null,
@@ -957,7 +958,7 @@
 | **Endpoint** | `/api/v1/dashboard/company/jobs/{job_id}/` |
 | **Auth** |  Private |
 | **Role** |  Company creator or approved Company Mentor |
-| **Usage** | Partially update a job. If `rules` is provided, **all existing rules are replaced** with the new set. |
+| **Usage** | Partially update a job. If `rules` is provided, **all existing rules are replaced** with the new set. Use this endpoint to change the job `status` (e.g. from `Draft` to `Active`). |
 
 **Path Parameters:**
 
