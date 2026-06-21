@@ -61,7 +61,7 @@ All responses follow one of two standard envelopes depending on whether they are
 9. [Event Analytics](#9-event-analytics)
 10. [User Dashboard & Invites](#10-user-dashboard--invites)
 11. [Public & Guest Access Endpoints](#11-public--guest-access-endpoints)
-12. [Event type values](#12-Event-type-values)
+12. [Event type & scope values](#12-Event-type-&-scope-values)
 
 ---
 
@@ -179,6 +179,50 @@ All responses follow one of two standard envelopes depending on whether they are
         ],
         "company": [],
         "campus_ig": []
+      }
+    }
+    ```
+
+### 1.4 Retrieve Event Types and Scopes
+*   **HTTP Method:** `GET`
+*   **Endpoint:** `/api/dashboard/events/meta/event-type-scope/`
+*   **Use/Description:** Retrieve the list of valid event types and event scopes formatted (first letter capitalized, underscores replaced by spaces).
+*   **Role who can access:** Public (No Auth).
+*   **Query Parameters:** None.
+*   **Request Body:** None.
+*   **Response (200 OK):**
+    ```json
+    {
+      "hasError": false,
+      "statusCode": 200,
+      "message": {
+        "general": ["Event types and scopes retrieved."]
+      },
+      "response": {
+        "event_type": [
+          "Hackathon",
+          "Workshop",
+          "Webinar",
+          "Seminar",
+          "Bootcamp",
+          "Meetup",
+          "Conference",
+          "Competition",
+          "Ideathon",
+          "Cultural event",
+          "Sports event",
+          "Community event",
+          "Expo",
+          "Networking event",
+          "Tech talk",
+          "Others"
+        ],
+        "event_scope": [
+          "Maker",
+          "Coder",
+          "Manager",
+          "Creative"
+        ]
       }
     }
     ```
@@ -1718,20 +1762,29 @@ All responses follow one of two standard envelopes depending on whether they are
       }
     }
     ```
-  ## 12-Event-type-values
-* hackathon
-* workshop
-* webinar
-* seminar
-* bootcamp
-* meetup
-* conference
-* competition
-* ideathon
-* cultural_event
-* sports_event
-* community_event
-* expo
-* networking_event
-* tech_talk
-* others (default)
+
+## 12. Event type & scope values
+
+### Event Types:
+* Hackathon
+* Workshop
+* Webinar
+* Seminar
+* Bootcamp
+* Meetup
+* Conference
+* Competition
+* Ideathon
+* Cultural event
+* Sports event
+* Community event
+* Expo
+* Networking event
+* Tech talk
+* Others
+
+### Event Scopes:
+* Maker
+* Coder
+* Manager
+* Creative
