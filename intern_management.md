@@ -452,6 +452,16 @@ Content-Type: application/json
 
 Update any field on a task. Changes are logged to `SystemActionLog`.
 
+Admins can update tasks freely even if they are already verified. 
+
+> ⚠️ **Verification & Reversion Rules:**
+> - Directly setting `"is_verified": true` via `PATCH` is **blocked** and raises a validation error. You must use the dedicated `/verify/` endpoint instead.
+> - Admins can revert verification by explicitly setting `"is_verified": false` or by changing the `status` of an already verified task.
+> - When verification is reverted, the system automatically:
+>   1. Deducts the task's awarded karma from the intern's `Wallet`.
+>   2. Deletes the corresponding `KarmaActivityLog` entry.
+>   3. Resets `is_verified` to `false`, `verified_by` to `null`, and `karma_awarded` to `0`.
+
 **Request**
 ```http
 PATCH /api/v1/dashboard/manage-interns/tasks/task-uuid-0099/
@@ -459,6 +469,7 @@ Authorization: Bearer <admin-token>
 Content-Type: application/json
 ```
 
+**Update standard fields:**
 ```json
 {
   "complexity": "CRITICAL",
@@ -474,9 +485,29 @@ Content-Type: application/json
 }
 ```
 
+**Revert verification:**
+```json
+{
+  "is_verified": false
+}
+```
+
 **Response `200 OK`**
 ```json
 { "hasError": false, "statusCode": 200, "message": "Task updated successfully." }
+```
+
+**Error `400`** — Attempting to set `is_verified` to `true`
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": {
+    "non_field_errors": [
+      "Task verification must be done via the dedicated verification endpoint."
+    ]
+  }
+}
 ```
 
 ---
@@ -512,7 +543,7 @@ Content-Type: application/json
 
 ### 2.6 `DELETE /tasks/<task_id>/`
 
-Permanently delete a task.
+Permanently delete a task. Verified tasks cannot be deleted unless verification is revoked first (by reverting it via `PATCH` or status change).
 
 **Request**
 ```http
@@ -525,9 +556,14 @@ Authorization: Bearer <admin-token>
 { "hasError": false, "statusCode": 200, "message": "Task deleted successfully." }
 ```
 
-**Error `400`**
+**Error `400`** — Task not found
 ```json
 { "hasError": true, "statusCode": 400, "message": "Task not found." }
+```
+
+**Error `400`** — Cannot delete a verified task
+```json
+{ "hasError": true, "statusCode": 400, "message": "Cannot delete a verified task. Revoke verification first." }
 ```
 
 ---
