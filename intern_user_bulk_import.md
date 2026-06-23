@@ -8,7 +8,7 @@ This document outlines the usage of the endpoints for bulk importing users as in
 
 Downloads an empty `.xlsx` file containing the required headers for the bulk import process.
 
-- **URL**: `/api/v1/dashboard/intern/manage/interns/import/template/`
+- **URL**: `/api/v1/dashboard/manage-interns/interns/import/template/`
 - **Method**: `GET`
 - **Authentication**: Required
 - **Role Required**: `Admin`
@@ -26,7 +26,7 @@ Downloads an empty `.xlsx` file containing the required headers for the bulk imp
 
 Upload the filled `.xlsx` file to bulk assign users as interns. The system processes each row independently. The user will be assigned the `Intern` role by default.
 
-- **URL**: `/api/v1/dashboard/intern/manage/interns/import/`
+- **URL**: `/api/v1/dashboard/manage-interns/interns/import/`
 - **Method**: `POST`
 - **Authentication**: Required
 - **Role Required**: `Admin`
