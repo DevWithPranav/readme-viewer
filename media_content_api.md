@@ -88,7 +88,7 @@ Authorization: Bearer <jwt_token>
 | `perPage` | integer | Items per page (default: `10`) |
 | `search` | string | Case-insensitive text search across indexed fields |
 | `sortBy` | string | Field to sort by. Prefix with `-` for descending. e.g. `-date` |
-| `is_upcoming` | `true` / `false` | Filter by upcoming (`date >= today`) or past |
+| `status` | `upcoming` / `ongoing` / `completed` | Filter by computed status based on date |
 | `zone` | string | `north` / `central` / `south` — SMT & Inspiration Station only |
 
 ---
@@ -121,7 +121,7 @@ List all active Office Hours sessions. **Public.**
 
 **Example:**
 ```
-GET /api/v1/dashboard/media-content/office-hours/?is_upcoming=true&pageIndex=1&perPage=5
+GET /api/v1/dashboard/media-content/office-hours/?status=upcoming&pageIndex=1&perPage=5
 ```
 
 **200 OK:**
@@ -142,7 +142,7 @@ GET /api/v1/dashboard/media-content/office-hours/?is_upcoming=true&pageIndex=1&p
         "link": "https://meet.google.com/xyz-abc",
         "interest_groups": ["web-development", "ai"],
         "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
-        "is_upcoming": true,
+        "status": "upcoming",
         "created_at": "2025-06-27T06:30:00.000000Z",
         "updated_at": "2025-06-27T06:30:00.000000Z"
       }
@@ -202,7 +202,7 @@ Create an Office Hours session. **Admin only.**
     "link": "https://meet.google.com/web3-session",
     "interest_groups": ["blockchain", "web-development"],
     "poster_thumbnail": "https://cdn.example.com/posters/web3.jpg",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T06:45:00.000000Z",
     "updated_at": "2025-06-27T06:45:00.000000Z"
   }
@@ -270,7 +270,7 @@ Retrieve a single session. **Public.**
     "link": "https://meet.google.com/xyz-abc",
     "interest_groups": ["web-development", "ai"],
     "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T06:30:00.000000Z",
     "updated_at": "2025-06-27T06:30:00.000000Z"
   }
@@ -324,7 +324,7 @@ Partially update a session. **Admin only.** All fields optional.
     "link": "https://meet.google.com/new-link",
     "interest_groups": ["ai", "generative-ai"],
     "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T06:30:00.000000Z",
     "updated_at": "2025-06-27T08:15:00.000000Z"
   }
@@ -387,7 +387,7 @@ List active SMT episodes. **Public.**
 
 **Example:**
 ```
-GET /api/v1/dashboard/media-content/salt-mango-tree/?zone=north&is_upcoming=true
+GET /api/v1/dashboard/media-content/salt-mango-tree/?zone=north&status=upcoming
 ```
 
 **200 OK:**
@@ -406,7 +406,7 @@ GET /api/v1/dashboard/media-content/salt-mango-tree/?zone=north&is_upcoming=true
         "date": "2025-08-20",
         "description": "Student founders share their journey from idea to product.",
         "link": "https://youtube.com/live/smt-ep12",
-        "is_upcoming": true,
+        "status": "upcoming",
         "created_at": "2025-06-27T09:00:00.000000Z",
         "updated_at": "2025-06-27T09:00:00.000000Z"
       }
@@ -463,7 +463,7 @@ Create an SMT episode. **Admin only.**
     "date": "2025-10-05",
     "description": "How students are using AI to solve farming challenges.",
     "link": "https://youtube.com/live/smt-ep15",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T09:15:00.000000Z",
     "updated_at": "2025-06-27T09:15:00.000000Z"
   }
@@ -529,7 +529,7 @@ Retrieve a single SMT episode. **Public.**
     "date": "2025-08-20",
     "description": "Student founders share their journey from idea to product.",
     "link": "https://youtube.com/live/smt-ep12",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T09:00:00.000000Z",
     "updated_at": "2025-06-27T09:00:00.000000Z"
   }
@@ -574,7 +574,7 @@ Partially update an SMT episode. **Admin only.**
     "date": "2025-08-20",
     "description": "Student founders share their journey from idea to product.",
     "link": "https://youtube.com/live/smt-ep12-v2",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T09:00:00.000000Z",
     "updated_at": "2025-06-27T10:00:00.000000Z"
   }
@@ -627,7 +627,7 @@ List active Inspiration Station episodes. **Public.**
 
 **Example:**
 ```
-GET /api/v1/dashboard/media-content/inspiration-station/?is_upcoming=false&perPage=3
+GET /api/v1/dashboard/media-content/inspiration-station/?status=completed&perPage=3
 ```
 
 **200 OK:**
@@ -646,7 +646,7 @@ GET /api/v1/dashboard/media-content/inspiration-station/?is_upcoming=false&perPa
         "date": "2025-04-10",
         "description": "A founder shares how an MBA project became a funded startup.",
         "link": null,
-        "is_upcoming": false,
+        "status": "completed",
         "created_at": "2025-04-01T05:00:00.000000Z",
         "updated_at": "2025-04-01T05:00:00.000000Z"
       }
@@ -703,7 +703,7 @@ Create an Inspiration Station episode. **Admin only.**
     "date": "2025-11-01",
     "description": "Female founders and engineers share their stories and advice.",
     "link": "https://youtube.com/live/is-ep20",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T10:00:00.000000Z",
     "updated_at": "2025-06-27T10:00:00.000000Z"
   }
@@ -743,7 +743,7 @@ Retrieve a single Inspiration Station episode. **Public.**
     "date": "2025-11-01",
     "description": "Female founders and engineers share their stories and advice.",
     "link": "https://youtube.com/live/is-ep20",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T10:00:00.000000Z",
     "updated_at": "2025-06-27T10:00:00.000000Z"
   }
@@ -788,7 +788,7 @@ Partially update an episode. **Admin only.**
     "date": "2025-11-05",
     "description": "Female founders and engineers share their stories and advice.",
     "link": "https://youtube.com/live/is-ep20",
-    "is_upcoming": true,
+    "status": "upcoming",
     "created_at": "2025-06-27T10:00:00.000000Z",
     "updated_at": "2025-06-27T11:00:00.000000Z"
   }
@@ -851,7 +851,7 @@ Soft-delete an episode. **Admin only.**
 
 - All `id` fields are **UUID v4** strings.
 - `created_at` / `updated_at` are ISO 8601 UTC timestamps.
-- `is_upcoming` is **computed at read time** (`date >= today`) — not stored in the DB.
+- `status` is **computed at read time** (`date > today` is upcoming, `date == today` is ongoing, `date < today` is completed) — not stored in the DB.
 - `content_type` is **automatically set** by the endpoint — it cannot be overridden via the request body.
 - Soft-deleted records (`deleted_at IS NOT NULL`) are **invisible** to all list and detail endpoints.
 - An ID from one content type is **not accessible** through another type's endpoint (e.g. an SMT id on the Office Hours detail URL returns 400).
