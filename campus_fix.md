@@ -37,22 +37,22 @@ Returns a downloadable CSV file: `Campus Student Details.csv`
 
 ## 2. 🗺️ Validating Google Maps URLs
 
-**File:** [`serializers.py` L509](file:///c:/Users/prana/Desktop/company_v2/mulearnbackend/api/dashboard/campus/serializers.py#L509-L534)
+**File:** [`serializers.py` L487](file:///c:/Users/prana/Desktop/company_v2/mulearnbackend/api/dashboard/events/serializers.py#L487-L534)
 
 ### Endpoints Affected
-```
-POST  /api/v1/dashboard/campus/ig-chapters/
-PATCH /api/v1/dashboard/campus/ig-chapters/<chapter_id>/
-```
+*(Event creation / update endpoints utilizing `validate_venue_maps_url`)*
 
 ### What Changed
-Added a `validate_icon_link` (URL field) in `CampusIGChapterCreateSerializer` and `CampusIGChapterUpdateSerializer`. Additionally, Google Maps URL validation was added to ensure submitted location/map URLs conform to accepted Google Maps patterns:
+Added Google Maps URL validation to ensure submitted location/map URLs conform to accepted Google Maps patterns. 
+A recent security fix tightened the regular expressions to prevent subdomain validation bypass (e.g. `google.com.evil.com`) by anchoring standard top-level domains (`(?:com|co\.[a-z]{2})$`). 
+Additionally, replaced `lstrip('www.')` with Python 3.9's `removeprefix('www.')` to prevent accidental stripping of all 'w' and '.' characters from hostnames.
 
-- `https://maps.google.*`  
-- `https://goo.gl/maps/...`  
+Accepted patterns:
+- `https://maps.google.com/...` (and standard `.co.**` variants)
+- `https://goo.gl/...`
 - `https://www.google.com/maps/...`
 
-Any other URL format is rejected with a validation error.
+Any other URL format (or unrecognized domain spoof) is rejected with a validation error.
 
 ### Validation Error Response
 ```json
