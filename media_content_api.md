@@ -846,6 +846,126 @@ Soft-delete an episode. **Admin only.**
 | `inspiration_station` | Inspiration Station Radio |
 
 ---
+# Media Content Bulk API Documentation
+
+## 1. Bulk Import Media Content
+Upload a CSV file to bulk import Media Content records. The API processes each row, dynamically routing it to the correct `content_type` validation and saving it.
+
+* **URL:** `/api/dashboard/media-content/bulk/import/`
+* **Method:** `POST`
+* **Content-Type:** `multipart/form-data`
+* **Authorization:** Bearer Token (Required Roles: Admin, Associate, IG Lead)
+
+### Request Form Data
+| Key | Type | Required | Description |
+|---|---|---|---|
+| `file` | File | Yes | The `.csv` file containing the bulk data to be imported. |
+
+### CSV Structure Expected
+* **`content_type`** (Required: `office_hours`, `salt_mango_tree`, `inspiration_station`)
+* **`title`** (or **`topic`**)
+* **`date`** (Required: `DD/MM/YYYY` for office hours, `YYYY-MM-DD` for others)
+* **`description`** (Optional)
+* **`link`** (Optional)
+* **`performer`, `designation`, `interest_groups`, `poster_thumbnail`** (Specific to `office_hours`)
+* **`campus`, `zone`** (Specific to `salt_mango_tree` / `inspiration_station`)
+
+### Response (Success) - `200 OK`
+```json
+{
+    "hasError": false,
+    "statusCode": 200,
+    "message": {
+        "general": [
+            "Bulk import completed."
+        ]
+    },
+    "response": {
+        "success_count": 10,
+        "failed_count": 0,
+        "failed_rows": []
+    }
+}
+```
+
+### Response (With Failures) - `200 OK`
+*(Returns 200 even if some rows fail, detailing which ones failed so the user can fix them)*
+```json
+{
+    "hasError": false,
+    "statusCode": 200,
+    "message": {
+        "general": [
+            "Bulk import completed."
+        ]
+    },
+    "response": {
+        "success_count": 9,
+        "failed_count": 1,
+        "failed_rows": [
+            {
+                "row": 3,
+                "title": "MuLearn Intro Session",
+                "reason": {
+                    "date": ["Invalid date format. Expected DD/MM/YYYY (e.g. 27/06/2025)."]
+                }
+            }
+        ]
+    }
+}
+```
+
+### Response (Error - Missing/Invalid File) - `400 Bad Request`
+```json
+{
+    "hasError": true,
+    "statusCode": 400,
+    "message": {
+        "general": [
+            "Invalid file type. Please upload a CSV file."
+        ]
+    },
+    "response": {}
+}
+```
+
+---
+
+## 2. Bulk Export Media Content
+Download a CSV export containing all active (non-deleted) records for a specific Media Content type. 
+
+* **URL:** `/api/dashboard/media-content/bulk/export/<str:content_type>/`
+* **Method:** `GET`
+* **Authorization:** Bearer Token (Required Roles: Admin, Associate, IG Lead)
+
+### URL Parameters
+* **`content_type`** (Required): The type of media content you want to export. Valid options are:
+    * `office_hours`
+    * `salt_mango_tree`
+    * `inspiration_station`
+
+### Request Body
+*None*
+
+### Response (Success) - `200 OK`
+* **Content-Type:** `text/csv` (potentially compressed as `application/gzip` based on your utility configuration).
+* **Content-Disposition:** `attachment; filename="<content_type>_export.csv.csv"`
+* **Body:** A downloadable CSV file containing the respective data. (It does not return JSON).
+
+### Response (Error - Invalid Content Type) - `400 Bad Request`
+```json
+{
+    "hasError": true,
+    "statusCode": 400,
+    "message": {
+        "general": [
+            "Invalid content type."
+        ]
+    },
+    "response": {}
+}
+```
+
 
 ## Implementation Notes
 
