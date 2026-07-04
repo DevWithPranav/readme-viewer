@@ -100,16 +100,37 @@ Authorization: Bearer <jwt_token>
 
 ### Field Reference
 
-| Field | Type | Required | Max Length | Notes |
-|-------|------|----------|------------|-------|
-| `title` | string | ✅ | 300 | Session title |
-| `date` | string | ✅ | — | Must be `DD/MM/YYYY` |
-| `performer` | string | ❌ | 200 | Speaker / host name |
-| `designation` | string | ❌ | 200 | e.g. "Senior Developer" |
-| `description` | string | ❌ | unlimited | Session description |
-| `link` | URL | ❌ | 500 | Meeting or streaming link |
-| `interest_groups` | string[] | ❌ | — | Array of IG slugs |
-| `poster_thumbnail` | string | ❌ | 512 | Image URL |
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `title` | string | ✅ | Session title. Max 300 chars. |
+| `date` | string | ✅ | Must be `DD/MM/YYYY` |
+| `performer` | string | ❌ | Speaker / host name. Max 200 chars. |
+| `designation` | string | ❌ | e.g. "Senior Developer". Max 200 chars. |
+| `description` | string | ❌ | Session description. Unlimited. |
+| `link` | URL | ❌ | Meeting or streaming link. Max 500 chars. |
+| `interest_groups` | string[] | ❌ | Array of IG slugs. |
+| `poster_thumbnail` | file / URL | ❌ | **Uploaded image file** (multipart) or a remote URL. See [Poster Thumbnail Upload](#poster-thumbnail-upload) below. |
+
+---
+
+### Poster Thumbnail Upload
+
+The `poster_thumbnail` field supports two input modes for write requests (`POST` / `PATCH`):
+
+| Mode | How to send | Behaviour |
+|------|-------------|-----------|
+| **File upload** | `multipart/form-data` with `poster_thumbnail` as a file field | Image is validated, saved to `MEDIA_ROOT/media_content/posters/`, and the DB stores the relative path. |
+| **Remote URL** | `multipart/form-data` or JSON with `poster_thumbnail` as a string URL | The server downloads the image (with SSRF protection), validates it, saves it locally, and stores the relative path. |
+| **Omit field** | Do not include the key | On PATCH, the existing value is left unchanged. On POST, field is stored as `null`. |
+| **Clear image** | Send `poster_thumbnail` as an empty string or `null` | Field is set to `null` in the DB. |
+
+**File constraints:**
+- Max size: **5 MB**
+- Allowed types: `png`, `jpg` / `jpeg`, `gif`, `webp`
+
+**Response:** The `poster_thumbnail` field in all GET/POST/PATCH responses is always returned as a **fully qualified absolute URL** (e.g. `https://yourdomain.com/media/media_content/posters/<uuid>.jpg`), never as a relative path.
+
+> **Note:** On PATCH, if the poster is replaced with a new upload or URL, the **old image file is automatically deleted** from the server's filesystem.
 
 ---
 
@@ -141,7 +162,7 @@ GET /api/v1/dashboard/media-content/office-hours/?status=upcoming&pageIndex=1&pe
         "date": "2025-08-15",
         "link": "https://meet.google.com/xyz-abc",
         "interest_groups": ["web-development", "ai"],
-        "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
+        "poster_thumbnail": "https://yourdomain.com/media/media_content/posters/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg",
         "status": "upcoming",
         "created_at": "2025-06-27T06:30:00.000000Z",
         "updated_at": "2025-06-27T06:30:00.000000Z"
@@ -164,7 +185,24 @@ GET /api/v1/dashboard/media-content/office-hours/?status=upcoming&pageIndex=1&pe
 
 Create an Office Hours session. **Admin only.**
 
-**Full request body:**
+> **Content-Type:** Use `multipart/form-data` when uploading a poster image. Use `application/json` when sending a URL or no poster.
+
+**Full request (multipart with file upload):**
+```
+POST /api/v1/dashboard/media-content/office-hours/
+Content-Type: multipart/form-data
+
+title           = "Introduction to Web3"
+date            = "15/09/2025"
+performer       = "Priya Nair"
+designation     = "Blockchain Developer"
+description     = "Explore decentralised applications and smart contracts."
+link            = "https://meet.google.com/web3-session"
+interest_groups = ["blockchain", "web-development"]
+poster_thumbnail = <binary image file>
+```
+
+**Full request (JSON with remote URL):**
 ```json
 {
   "title": "Introduction to Web3",
@@ -201,7 +239,7 @@ Create an Office Hours session. **Admin only.**
     "date": "2025-09-15",
     "link": "https://meet.google.com/web3-session",
     "interest_groups": ["blockchain", "web-development"],
-    "poster_thumbnail": "https://cdn.example.com/posters/web3.jpg",
+    "poster_thumbnail": "https://yourdomain.com/media/media_content/posters/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg",
     "status": "upcoming",
     "created_at": "2025-06-27T06:45:00.000000Z",
     "updated_at": "2025-06-27T06:45:00.000000Z"
@@ -231,6 +269,18 @@ Create an Office Hours session. **Admin only.**
   "message": {
     "general": ["Invalid data."],
     "date": ["Invalid date format. Expected DD/MM/YYYY (e.g. 27/06/2025)."]
+  },
+  "response": {}
+}
+```
+
+**400 — Invalid poster image (bad type or too large):**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": {
+    "general": ["Invalid image type. Allowed: gif, jpeg, jpg, png, webp"]
   },
   "response": {}
 }
@@ -269,7 +319,7 @@ Retrieve a single session. **Public.**
     "date": "2025-08-15",
     "link": "https://meet.google.com/xyz-abc",
     "interest_groups": ["web-development", "ai"],
-    "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
+    "poster_thumbnail": "https://yourdomain.com/media/media_content/posters/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg",
     "status": "upcoming",
     "created_at": "2025-06-27T06:30:00.000000Z",
     "updated_at": "2025-06-27T06:30:00.000000Z"
@@ -293,7 +343,9 @@ Retrieve a single session. **Public.**
 
 Partially update a session. **Admin only.** All fields optional.
 
-**Request (update link + interest groups):**
+> When replacing `poster_thumbnail`, the old image file is **automatically deleted** from the server.
+
+**Request (update link + interest groups via JSON):**
 ```json
 {
   "link": "https://meet.google.com/new-link",
@@ -301,10 +353,18 @@ Partially update a session. **Admin only.** All fields optional.
 }
 ```
 
-**Request (update date):**
+**Request (replace poster via multipart):**
+```
+PATCH /api/v1/dashboard/media-content/office-hours/{record_id}/
+Content-Type: multipart/form-data
+
+poster_thumbnail = <binary image file>
+```
+
+**Request (clear the poster):**
 ```json
 {
-  "date": "30/09/2025"
+  "poster_thumbnail": null
 }
 ```
 
@@ -323,7 +383,7 @@ Partially update a session. **Admin only.** All fields optional.
     "date": "2025-09-30",
     "link": "https://meet.google.com/new-link",
     "interest_groups": ["ai", "generative-ai"],
-    "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
+    "poster_thumbnail": "https://yourdomain.com/media/media_content/posters/new-uuid.jpg",
     "status": "upcoming",
     "created_at": "2025-06-27T06:30:00.000000Z",
     "updated_at": "2025-06-27T08:15:00.000000Z"
@@ -496,7 +556,7 @@ Create an SMT episode. **Admin only.**
 }
 ```
 
-**400 — Wrong date format (e.g. DD/MM/YYYY sent instead of YYYY-MM-DD):**
+**400 — Wrong date format:**
 ```json
 {
   "hasError": true,
@@ -813,6 +873,123 @@ Soft-delete an episode. **Admin only.**
 
 ---
 
+## Bulk Import
+
+Upload a CSV file to bulk import Media Content records.
+
+- **URL:** `/api/v1/dashboard/media-content/bulk/import/`
+- **Method:** `POST`
+- **Content-Type:** `multipart/form-data`
+- **Authorization:** Bearer Token (Roles: Admin, Associate, IG Lead)
+
+### Request Form Data
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `file` | File | ✅ | The `.csv` file to import. Must be UTF-8 encoded. |
+
+### CSV Structure
+
+| Column | Required | Notes |
+|--------|----------|-------|
+| `content_type` | ✅ | `office_hours`, `salt_mango_tree`, or `inspiration_station` |
+| `title` or `topic` | ✅ | Use `title` for Office Hours; `topic` for SMT / IS (both normalized automatically) |
+| `date` | ✅ | `DD/MM/YYYY` for `office_hours`; `YYYY-MM-DD` for others |
+| `description` | ❌ | |
+| `link` | ❌ | |
+| `performer`, `designation`, `interest_groups`, `poster_thumbnail` | ❌ | Office Hours only. `poster_thumbnail` must be a **URL** in CSV imports (file uploads are not supported via CSV). |
+| `campus`, `zone` | ❌ | SMT / Inspiration Station only |
+
+> **Note:** File uploads for `poster_thumbnail` are not supported in bulk CSV imports. Provide a publicly accessible URL instead; the server will download and store the image.
+
+### Response (All rows succeeded) — `200 OK`
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Bulk import completed."] },
+  "response": {
+    "success_count": 10,
+    "failed_count": 0,
+    "failed_rows": []
+  }
+}
+```
+
+### Response (Partial failures) — `200 OK`
+
+Returns `200` even if some rows fail so the caller can inspect and fix them.
+
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Bulk import completed."] },
+  "response": {
+    "success_count": 9,
+    "failed_count": 1,
+    "failed_rows": [
+      {
+        "row": 3,
+        "title": "MuLearn Intro Session",
+        "reason": {
+          "date": ["Invalid date format. Expected DD/MM/YYYY (e.g. 27/06/2025)."]
+        }
+      }
+    ]
+  }
+}
+```
+
+### Response (Missing / invalid file) — `400 Bad Request`
+
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": { "general": ["Invalid file type. Please upload a CSV file."] },
+  "response": {}
+}
+```
+
+---
+
+## Bulk Export
+
+Download a CSV export of all active (non-deleted) records for a specific content type.
+
+- **URL:** `/api/v1/dashboard/media-content/bulk/export/{content_type}/`
+- **Method:** `GET`
+- **Authorization:** Bearer Token (Roles: Admin, Associate, IG Lead)
+
+### URL Parameters
+
+| Parameter | Required | Values |
+|-----------|----------|--------|
+| `content_type` | ✅ | `office_hours`, `salt_mango_tree`, `inspiration_station` |
+
+### Response (Success) — `200 OK`
+
+- **Content-Type:** `text/csv`
+- **Content-Disposition:** `attachment; filename="<content_type>_export.csv"`
+- **Body:** Downloadable CSV file. Does not return JSON.
+
+> **Note:** The `poster_thumbnail` column in exported CSVs contains the fully resolved absolute URL (e.g. `https://yourdomain.com/media/media_content/posters/<uuid>.jpg`).
+
+### Response (Invalid content type) — `400 Bad Request`
+
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": { "general": ["Invalid content type. Must be office_hours, salt_mango_tree, or inspiration_station."] },
+  "response": {}
+}
+```
+
+---
+
 ## Error Reference
 
 | Scenario | HTTP Status | `hasError` | Sample Message |
@@ -824,6 +1001,9 @@ Soft-delete an episode. **Admin only.**
 | Wrong type ID on wrong endpoint | `400` | `true` | `"<Type> not found."` |
 | Non-admin write attempt | `400` | `true` | `"You do not have the required role..."` |
 | No / invalid JWT | `401` / `403` | `true` | `"Invalid token header"` |
+| Invalid poster image type | `400` | `true` | `"Invalid image type. Allowed: gif, jpeg, jpg, png, webp"` |
+| Poster image too large | `400` | `true` | `"File size exceeds 5MB limit"` |
+| Remote poster URL not reachable / not an image | `400` | `true` | `"URL did not return an image"` |
 
 ---
 
@@ -846,132 +1026,14 @@ Soft-delete an episode. **Admin only.**
 | `inspiration_station` | Inspiration Station Radio |
 
 ---
-# Media Content Bulk API Documentation
-
-## 1. Bulk Import Media Content
-Upload a CSV file to bulk import Media Content records. The API processes each row, dynamically routing it to the correct `content_type` validation and saving it.
-
-* **URL:** `/api/dashboard/media-content/bulk/import/`
-* **Method:** `POST`
-* **Content-Type:** `multipart/form-data`
-* **Authorization:** Bearer Token (Required Roles: Admin, Associate, IG Lead)
-
-### Request Form Data
-| Key | Type | Required | Description |
-|---|---|---|---|
-| `file` | File | Yes | The `.csv` file containing the bulk data to be imported. |
-
-### CSV Structure Expected
-* **`content_type`** (Required: `office_hours`, `salt_mango_tree`, `inspiration_station`)
-* **`title`** (or **`topic`**)
-* **`date`** (Required: `DD/MM/YYYY` for office hours, `YYYY-MM-DD` for others)
-* **`description`** (Optional)
-* **`link`** (Optional)
-* **`performer`, `designation`, `interest_groups`, `poster_thumbnail`** (Specific to `office_hours`)
-* **`campus`, `zone`** (Specific to `salt_mango_tree` / `inspiration_station`)
-
-### Response (Success) - `200 OK`
-```json
-{
-    "hasError": false,
-    "statusCode": 200,
-    "message": {
-        "general": [
-            "Bulk import completed."
-        ]
-    },
-    "response": {
-        "success_count": 10,
-        "failed_count": 0,
-        "failed_rows": []
-    }
-}
-```
-
-### Response (With Failures) - `200 OK`
-*(Returns 200 even if some rows fail, detailing which ones failed so the user can fix them)*
-```json
-{
-    "hasError": false,
-    "statusCode": 200,
-    "message": {
-        "general": [
-            "Bulk import completed."
-        ]
-    },
-    "response": {
-        "success_count": 9,
-        "failed_count": 1,
-        "failed_rows": [
-            {
-                "row": 3,
-                "title": "MuLearn Intro Session",
-                "reason": {
-                    "date": ["Invalid date format. Expected DD/MM/YYYY (e.g. 27/06/2025)."]
-                }
-            }
-        ]
-    }
-}
-```
-
-### Response (Error - Missing/Invalid File) - `400 Bad Request`
-```json
-{
-    "hasError": true,
-    "statusCode": 400,
-    "message": {
-        "general": [
-            "Invalid file type. Please upload a CSV file."
-        ]
-    },
-    "response": {}
-}
-```
-
----
-
-## 2. Bulk Export Media Content
-Download a CSV export containing all active (non-deleted) records for a specific Media Content type. 
-
-* **URL:** `/api/dashboard/media-content/bulk/export/<str:content_type>/`
-* **Method:** `GET`
-* **Authorization:** Bearer Token (Required Roles: Admin, Associate, IG Lead)
-
-### URL Parameters
-* **`content_type`** (Required): The type of media content you want to export. Valid options are:
-    * `office_hours`
-    * `salt_mango_tree`
-    * `inspiration_station`
-
-### Request Body
-*None*
-
-### Response (Success) - `200 OK`
-* **Content-Type:** `text/csv` (potentially compressed as `application/gzip` based on your utility configuration).
-* **Content-Disposition:** `attachment; filename="<content_type>_export.csv.csv"`
-* **Body:** A downloadable CSV file containing the respective data. (It does not return JSON).
-
-### Response (Error - Invalid Content Type) - `400 Bad Request`
-```json
-{
-    "hasError": true,
-    "statusCode": 400,
-    "message": {
-        "general": [
-            "Invalid content type."
-        ]
-    },
-    "response": {}
-}
-```
-
 
 ## Implementation Notes
 
 - All `id` fields are **UUID v4** strings.
 - `created_at` / `updated_at` are ISO 8601 UTC timestamps.
-- `status` is **computed at read time** (`date > today` is upcoming, `date == today` is ongoing, `date < today` is completed) — not stored in the DB.
+- `status` is **computed at read time** (`date > today` → upcoming, `date == today` → ongoing, `date < today` → completed) — not stored in the DB.
 - `content_type` is **automatically set** by the endpoint — it cannot be overridden via the request body.
 - Soft-deleted records (`deleted_at IS NOT NULL`) are **invisible** to all list and detail endpoints.
 - An ID from one content type is **not accessible** through another type's endpoint (e.g. an SMT id on the Office Hours detail URL returns 400).
+- `poster_thumbnail` images are stored under `MEDIA_ROOT/media_content/posters/` as `<uuid>.<ext>`. Old files are automatically cleaned up when a poster is replaced via PATCH.
+- The `poster_thumbnail` field is **exclusive to Office Hours** — SMT and Inspiration Station do not use it.
