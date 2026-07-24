@@ -11,10 +11,6 @@ Auth: `Authorization: Bearer <accessToken>` header on every request.
 - **Changed:** the old `icon` field (a short emoji/code string, max 10 chars) is superseded by an **icon image** file upload, stored the same way. `icon` is no longer accepted or required on Create (`POST /api/v1/dashboard/ig/`), Update (`PUT /api/v1/dashboard/ig/{pk}/`, `PATCH /api/v1/dashboard/ig/get/{pk}/`), or the IG Request flow (`POST /api/v1/dashboard/ig/request/`). The legacy `icon` DB column is kept (now nullable) for backward compatibility with existing rows and is still returned read-only in responses, but new/updated IGs should use `icon-image/` instead.
 - `InterestGroupSerializer` responses (list/get/list-public/CSV) now include two new read-only fields: `cover_image` and `icon_image` — each is a full URL or `null` if nothing has been uploaded yet.
 
-## DB change
-
-See `alter-scripts/alter-1.65.sql`: makes `interest_group.icon` nullable. No new columns/tables — image files live under `MEDIA_ROOT`, not the DB.
-
 ---
 
 ## 1. Upload / replace the cover image
