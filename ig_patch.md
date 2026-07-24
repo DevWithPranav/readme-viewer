@@ -10,6 +10,52 @@ Auth: `Authorization: Bearer <accessToken>` header on every request.
 - **New:** an Interest Group can now have a **cover image**, uploaded as an image file and stored the same way user profile cover pics and impact project images are (`FileSystemStorage`, served from `/muback-media/…`) — **not** as a DB column.
 - **Changed:** the old `icon` field (a short emoji/code string, max 10 chars) is superseded by an **icon image** file upload, stored the same way. `icon` is no longer accepted or required on Create (`POST /api/v1/dashboard/ig/`), Update (`PUT /api/v1/dashboard/ig/{pk}/`, `PATCH /api/v1/dashboard/ig/get/{pk}/`), or the IG Request flow (`POST /api/v1/dashboard/ig/request/`). The legacy `icon` DB column is kept (now nullable) for backward compatibility with existing rows and is still returned read-only in responses, but new/updated IGs should use `icon-image/` instead.
 - `InterestGroupSerializer` responses (list/get/list-public/CSV) now include two new read-only fields: `cover_image` and `icon_image` — each is a full URL or `null` if nothing has been uploaded yet.
+- **New:** both Create endpoints (`POST /api/v1/dashboard/ig/` and `POST /api/v1/dashboard/ig/request/`) can now set the cover/icon image **in the same request** — send `multipart/form-data` with optional `cover_image`/`icon_image` file fields alongside the other fields. Plain JSON (no images) still works exactly as before; images stay entirely optional and can still be uploaded/replaced later via the dedicated endpoints below.
+
+## DB change
+
+See `alter-scripts/alter-1.65.sql`: makes `interest_group.icon` nullable. No new columns/tables — image files live under `MEDIA_ROOT`, not the DB.
+
+---
+
+## 0. Create an IG with images in one request
+
+`POST /api/v1/dashboard/ig/` (Admin only)
+`Content-Type: multipart/form-data`
+
+Same fields as the existing Create Interest Group payload (`name`, `code`, `category`, `about`, `leads`, `mentors`, etc. — list/dict fields like `leads`/`mentors` should be sent as JSON-encoded strings in the form body), plus two optional file fields:
+
+| key | value |
+|---|---|
+| `name`, `code`, `category`, ... | (existing text fields, unchanged) |
+| `cover_image` | optional (file) a `.png`/`.jpg` under 5 MB |
+| `icon_image` | optional (file) a `.png`/`.jpg` under 5 MB |
+
+Validation runs **before** the IG is created — if either image fails validation (bad type, over 5 MB, corrupted/spoofed content), the request 400s and **no IG is created**, same fail-fast guarantee as every other field. Omitting both file fields still works as a plain create (JSON body, no images) exactly like before this change.
+
+**Response 200**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": [] },
+  "response": {
+    "interestGroup": {
+      "name": "Robotics",
+      "code": "ROBO",
+      "category": "maker",
+      "status": "active",
+      "cover_image": "https://<BE_DOMAIN_NAME>/muback-media/interest_group/cover/<ig_id>.png",
+      "icon_image": "https://<BE_DOMAIN_NAME>/muback-media/interest_group/icon/<ig_id>.png"
+    }
+  }
+}
+```
+`cover_image`/`icon_image` only appear in the response if that file was actually sent in the request.
+
+The same applies to the company IG request flow — `POST /api/v1/dashboard/ig/request/` accepts the identical optional `cover_image`/`icon_image` file fields; the resulting `"requested"`-status IG carries the images immediately, no separate upload call needed once approved.
+
+Same error cases as the standalone upload endpoints below (`"Expected an image file"`, `"Image must be under 5 MB"`, `"Invalid or corrupted image file"`), on top of the existing Create validation errors (missing `name`/`code`, invalid `leads`/`mentors` muids, etc.).
 
 ---
 
@@ -130,6 +176,13 @@ The company IG-request form (`POST/PATCH /api/v1/dashboard/ig/request/`) needed 
 ## Quick curl examples
 
 ```bash
+# Create an IG with both images in one request
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -F "name=Robotics" -F "code=ROBO" -F "category=maker" \
+  -F "cover_image=@/path/to/cover.png" \
+  -F "icon_image=@/path/to/icon.png" \
+  http://localhost:8000/api/v1/dashboard/ig/
+
 # Upload cover image
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -F "image=@/path/to/cover.png" \
