@@ -11,6 +11,10 @@ Auth: `Authorization: Bearer <accessToken>` header on every request.
 - **Changed:** the old `icon` field (a short emoji/code string, max 10 chars) is superseded by an **icon image** file upload, stored the same way. `icon` is no longer accepted or required on Create (`POST /api/v1/dashboard/ig/`), Update (`PUT /api/v1/dashboard/ig/{pk}/`, `PATCH /api/v1/dashboard/ig/get/{pk}/`), or the IG Request flow (`POST /api/v1/dashboard/ig/request/`). The legacy `icon` DB column is kept (now nullable) for backward compatibility with existing rows and is still returned read-only in responses, but new/updated IGs should use `icon-image/` instead.
 - `InterestGroupSerializer` responses (list/get/list-public/CSV) now include two new read-only fields: `cover_image` and `icon_image` — each is a full URL or `null` if nothing has been uploaded yet.
 
+## DB change
+
+See `alter-scripts/alter-1.65.sql`: makes `interest_group.icon` nullable. No new columns/tables — image files live under `MEDIA_ROOT`, not the DB.
+
 ---
 
 ## 1. Upload / replace the cover image
@@ -108,6 +112,22 @@ Any endpoint returning `InterestGroupSerializer` data (`GET /api/v1/dashboard/ig
 ```
 
 `icon_image`/`cover_image` are `null` until something is uploaded. `icon` is `null`/absent for any IG created after this change, since it's no longer settable through Create/Update/Request.
+
+---
+
+## 6. Other endpoints now returning `cover_image`/`icon_image`
+
+The same two read-only fields were also added to every other serializer that already surfaced an IG's identity, so downstream apps (campus, events) don't need a separate lookup to render an image:
+
+| Endpoint | Serializer | File |
+|---|---|---|
+| `GET /api/v1/dashboard/campus/ig-chapters/` | `CampusIGChapterListSerializer` — as `ig_cover_image` / `ig_icon_image` (alongside the existing `ig_icon`) | `api/dashboard/campus/serializers.py` |
+| Campus IG listing (`CampusIGListSerializer`) | adds `cover_image`, `icon_image` next to `id`/`name`/`code`/`campus_member_count` | `api/dashboard/campus/serializers.py` |
+| Events' `MinimalIGSerializer` (IG tagging on events) | adds `cover_image`, `icon_image` next to `id`/`name`/`icon` | `api/dashboard/events/serializers.py` |
+
+**Not changed** (no image field added): `MentorIGDropdownSerializer`, profile's `UserIgListSerializer`, register's `AreaOfInterestAPISerializer` — these are plain `id`/`name` dropdown lists that don't render an icon today, so this is out of scope for now. Also not changed: raw `.values('id','name','icon',...)` dict-based queries in `events/meta_views.py`, `dash_task_view.py`, `mentor/task_views.py` — `.values()` can't read a Python `@property`, so surfacing images there needs a follow-up (switch to a serializer, or annotate) rather than this change.
+
+The company IG-request form (`POST/PATCH /api/v1/dashboard/ig/request/`) needed no separate fix — it already runs through the same `InterestGroupRequestSerializer` covered in section "What changed" above. No standalone campus-level IG *creation* endpoint exists — `campus/ig-chapters/` links an existing IG to a campus (`CampusIGChapter`, its own unrelated `icon_link` URL field) rather than creating an `InterestGroup` row.
 
 ---
 
