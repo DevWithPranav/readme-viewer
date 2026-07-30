@@ -2,7 +2,7 @@
 
 > Base URL prefix: `/api/v1/dashboard/media-content/`
 
-This module exposes CRUD endpoints for three content types previously managed via CMS, now stored in a single `media_content` database table with a `content_type` discriminator.
+This module exposes CRUD endpoints for four content types (three previously managed via CMS, plus one native addition), all stored in a single `media_content` database table with a `content_type` discriminator.
 
 ---
 
@@ -14,6 +14,7 @@ This module exposes CRUD endpoints for three content types previously managed vi
 - [Office Hours](#-office-hours)
 - [Salt Mango Tree](#-salt-mango-tree)
 - [Inspiration Station Radio](#-inspiration-station-radio)
+- [Grab Your Superpowers](#-grab-your-superpowers)
 - [Error Reference](#error-reference)
 - [Enum Reference](#enum-reference)
 
@@ -100,37 +101,16 @@ Authorization: Bearer <jwt_token>
 
 ### Field Reference
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `title` | string | ✅ | Session title. Max 300 chars. |
-| `date` | string | ✅ | Must be `DD/MM/YYYY` |
-| `performer` | string | ❌ | Speaker / host name. Max 200 chars. |
-| `designation` | string | ❌ | e.g. "Senior Developer". Max 200 chars. |
-| `description` | string | ❌ | Session description. Unlimited. |
-| `link` | URL | ❌ | Meeting or streaming link. Max 500 chars. |
-| `interest_groups` | string[] | ❌ | Array of IG slugs. |
-| `poster_thumbnail` | file / URL | ❌ | **Uploaded image file** (multipart) or a remote URL. See [Poster Thumbnail Upload](#poster-thumbnail-upload) below. |
-
----
-
-### Poster Thumbnail Upload
-
-The `poster_thumbnail` field supports two input modes for write requests (`POST` / `PATCH`):
-
-| Mode | How to send | Behaviour |
-|------|-------------|-----------|
-| **File upload** | `multipart/form-data` with `poster_thumbnail` as a file field | Image is validated, saved to `MEDIA_ROOT/media_content/posters/`, and the DB stores the relative path. |
-| **Remote URL** | `multipart/form-data` or JSON with `poster_thumbnail` as a string URL | The server downloads the image (with SSRF protection), validates it, saves it locally, and stores the relative path. |
-| **Omit field** | Do not include the key | On PATCH, the existing value is left unchanged. On POST, field is stored as `null`. |
-| **Clear image** | Send `poster_thumbnail` as an empty string or `null` | Field is set to `null` in the DB. |
-
-**File constraints:**
-- Max size: **5 MB**
-- Allowed types: `png`, `jpg` / `jpeg`, `gif`, `webp`
-
-**Response:** The `poster_thumbnail` field in all GET/POST/PATCH responses is always returned as a **fully qualified absolute URL** (e.g. `https://yourdomain.com/media/media_content/posters/<uuid>.jpg`), never as a relative path.
-
-> **Note:** On PATCH, if the poster is replaced with a new upload or URL, the **old image file is automatically deleted** from the server's filesystem.
+| Field | Type | Required | Max Length | Notes |
+|-------|------|----------|------------|-------|
+| `title` | string | ✅ | 300 | Session title |
+| `date` | string | ✅ | — | Must be `DD/MM/YYYY` |
+| `performer` | string | ❌ | 200 | Speaker / host name |
+| `designation` | string | ❌ | 200 | e.g. "Senior Developer" |
+| `description` | string | ❌ | unlimited | Session description |
+| `link` | URL | ❌ | 500 | Meeting or streaming link |
+| `interest_groups` | string[] | ❌ | — | Array of IG slugs |
+| `poster_thumbnail` | string | ❌ | 512 | Image URL |
 
 ---
 
@@ -162,7 +142,7 @@ GET /api/v1/dashboard/media-content/office-hours/?status=upcoming&pageIndex=1&pe
         "date": "2025-08-15",
         "link": "https://meet.google.com/xyz-abc",
         "interest_groups": ["web-development", "ai"],
-        "poster_thumbnail": "https://yourdomain.com/media/media_content/posters/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg",
+        "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
         "status": "upcoming",
         "created_at": "2025-06-27T06:30:00.000000Z",
         "updated_at": "2025-06-27T06:30:00.000000Z"
@@ -185,24 +165,7 @@ GET /api/v1/dashboard/media-content/office-hours/?status=upcoming&pageIndex=1&pe
 
 Create an Office Hours session. **Admin only.**
 
-> **Content-Type:** Use `multipart/form-data` when uploading a poster image. Use `application/json` when sending a URL or no poster.
-
-**Full request (multipart with file upload):**
-```
-POST /api/v1/dashboard/media-content/office-hours/
-Content-Type: multipart/form-data
-
-title           = "Introduction to Web3"
-date            = "15/09/2025"
-performer       = "Priya Nair"
-designation     = "Blockchain Developer"
-description     = "Explore decentralised applications and smart contracts."
-link            = "https://meet.google.com/web3-session"
-interest_groups = ["blockchain", "web-development"]
-poster_thumbnail = <binary image file>
-```
-
-**Full request (JSON with remote URL):**
+**Full request body:**
 ```json
 {
   "title": "Introduction to Web3",
@@ -239,7 +202,7 @@ poster_thumbnail = <binary image file>
     "date": "2025-09-15",
     "link": "https://meet.google.com/web3-session",
     "interest_groups": ["blockchain", "web-development"],
-    "poster_thumbnail": "https://yourdomain.com/media/media_content/posters/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg",
+    "poster_thumbnail": "https://cdn.example.com/posters/web3.jpg",
     "status": "upcoming",
     "created_at": "2025-06-27T06:45:00.000000Z",
     "updated_at": "2025-06-27T06:45:00.000000Z"
@@ -269,18 +232,6 @@ poster_thumbnail = <binary image file>
   "message": {
     "general": ["Invalid data."],
     "date": ["Invalid date format. Expected DD/MM/YYYY (e.g. 27/06/2025)."]
-  },
-  "response": {}
-}
-```
-
-**400 — Invalid poster image (bad type or too large):**
-```json
-{
-  "hasError": true,
-  "statusCode": 400,
-  "message": {
-    "general": ["Invalid image type. Allowed: gif, jpeg, jpg, png, webp"]
   },
   "response": {}
 }
@@ -319,7 +270,7 @@ Retrieve a single session. **Public.**
     "date": "2025-08-15",
     "link": "https://meet.google.com/xyz-abc",
     "interest_groups": ["web-development", "ai"],
-    "poster_thumbnail": "https://yourdomain.com/media/media_content/posters/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg",
+    "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
     "status": "upcoming",
     "created_at": "2025-06-27T06:30:00.000000Z",
     "updated_at": "2025-06-27T06:30:00.000000Z"
@@ -343,9 +294,7 @@ Retrieve a single session. **Public.**
 
 Partially update a session. **Admin only.** All fields optional.
 
-> When replacing `poster_thumbnail`, the old image file is **automatically deleted** from the server.
-
-**Request (update link + interest groups via JSON):**
+**Request (update link + interest groups):**
 ```json
 {
   "link": "https://meet.google.com/new-link",
@@ -353,18 +302,10 @@ Partially update a session. **Admin only.** All fields optional.
 }
 ```
 
-**Request (replace poster via multipart):**
-```
-PATCH /api/v1/dashboard/media-content/office-hours/{record_id}/
-Content-Type: multipart/form-data
-
-poster_thumbnail = <binary image file>
-```
-
-**Request (clear the poster):**
+**Request (update date):**
 ```json
 {
-  "poster_thumbnail": null
+  "date": "30/09/2025"
 }
 ```
 
@@ -383,7 +324,7 @@ poster_thumbnail = <binary image file>
     "date": "2025-09-30",
     "link": "https://meet.google.com/new-link",
     "interest_groups": ["ai", "generative-ai"],
-    "poster_thumbnail": "https://yourdomain.com/media/media_content/posters/new-uuid.jpg",
+    "poster_thumbnail": "https://cdn.example.com/poster1.jpg",
     "status": "upcoming",
     "created_at": "2025-06-27T06:30:00.000000Z",
     "updated_at": "2025-06-27T08:15:00.000000Z"
@@ -556,7 +497,7 @@ Create an SMT episode. **Admin only.**
 }
 ```
 
-**400 — Wrong date format:**
+**400 — Wrong date format (e.g. DD/MM/YYYY sent instead of YYYY-MM-DD):**
 ```json
 {
   "hasError": true,
@@ -873,120 +814,271 @@ Soft-delete an episode. **Admin only.**
 
 ---
 
-## Bulk Import
+## 🦸 Grab Your Superpowers
 
-Upload a CSV file to bulk import Media Content records.
+**Content type discriminator:** `grab_your_superpowers`
+**Date format:** `YYYY-MM-DD` | **Time format:** `HH:MM` (24h, e.g. `14:30`)
 
-- **URL:** `/api/v1/dashboard/media-content/bulk/import/`
-- **Method:** `POST`
-- **Content-Type:** `multipart/form-data`
-- **Authorization:** Bearer Token (Roles: Admin, Associate, IG Lead)
+> **Note:** This is the only content type with a `time` field — a session-start time distinct from the `date`. It reuses `performer`/`designation` for speaker details (like Office Hours) and `campus` for the hosting college (like SMT/Inspiration Station), so no schema changes were needed beyond adding `time`.
 
-### Request Form Data
+### Field Reference
 
-| Key | Type | Required | Description |
-|-----|------|----------|-------------|
-| `file` | File | ✅ | The `.csv` file to import. Must be UTF-8 encoded. |
+| Field | Type | Required | Max Length | Notes |
+|-------|------|----------|------------|-------|
+| `title` | string | ✅ | 300 | Session name |
+| `date` | string | ✅ | — | Must be `YYYY-MM-DD` |
+| `time` | string | ❌ | — | Must be `HH:MM` (or `HH:MM:SS`), 24h |
+| `description` | string | ❌ | unlimited | Session description |
+| `performer` | string | ❌ | 200 | Speaker name |
+| `designation` | string | ❌ | 200 | Speaker's role/title, e.g. "Product Manager" |
+| `campus` | string | ✅ | 200 | College conducting the session |
+| `link` | URL | ❌ | 500 | Meet link |
 
-### CSV Structure
+---
 
-| Column | Required | Notes |
-|--------|----------|-------|
-| `content_type` | ✅ | `office_hours`, `salt_mango_tree`, or `inspiration_station` |
-| `title` or `topic` | ✅ | Use `title` for Office Hours; `topic` for SMT / IS (both normalized automatically) |
-| `date` | ✅ | `DD/MM/YYYY` for `office_hours`; `YYYY-MM-DD` for others |
-| `description` | ❌ | |
-| `link` | ❌ | |
-| `performer`, `designation`, `interest_groups`, `poster_thumbnail` | ❌ | Office Hours only. `poster_thumbnail` must be a **URL** in CSV imports (file uploads are not supported via CSV). |
-| `campus`, `zone` | ❌ | SMT / Inspiration Station only |
+### `GET /api/v1/dashboard/media-content/grab-your-superpowers/`
 
-> **Note:** File uploads for `poster_thumbnail` are not supported in bulk CSV imports. Provide a publicly accessible URL instead; the server will download and store the image.
+List active Grab Your Superpowers sessions. **Public.**
 
-### Response (All rows succeeded) — `200 OK`
+**Search fields:** `title`, `performer`, `campus`, `description`
 
-```json
-{
-  "hasError": false,
-  "statusCode": 200,
-  "message": { "general": ["Bulk import completed."] },
-  "response": {
-    "success_count": 10,
-    "failed_count": 0,
-    "failed_rows": []
-  }
-}
+**Example:**
+```
+GET /api/v1/dashboard/media-content/grab-your-superpowers/?status=upcoming&sortBy=date
 ```
 
-### Response (Partial failures) — `200 OK`
-
-Returns `200` even if some rows fail so the caller can inspect and fix them.
-
+**200 OK:**
 ```json
 {
   "hasError": false,
   "statusCode": 200,
-  "message": { "general": ["Bulk import completed."] },
+  "message": { "general": [] },
   "response": {
-    "success_count": 9,
-    "failed_count": 1,
-    "failed_rows": [
+    "data": [
       {
-        "row": 3,
-        "title": "MuLearn Intro Session",
-        "reason": {
-          "date": ["Invalid date format. Expected DD/MM/YYYY (e.g. 27/06/2025)."]
-        }
+        "id": "12ab34cd-56ef-7890-1234-56789abcdef0",
+        "title": "Unlock Your Product Sense",
+        "date": "2025-09-12",
+        "time": "15:00:00",
+        "description": "A workshop on developing product intuition through real case studies.",
+        "performer": "Anjali Menon",
+        "designation": "Product Manager, Zoho",
+        "campus": "College of Engineering Trivandrum",
+        "link": "https://meet.google.com/gys-session1",
+        "status": "upcoming",
+        "created_at": "2025-06-27T11:00:00.000000Z",
+        "updated_at": "2025-06-27T11:00:00.000000Z"
       }
-    ]
+    ],
+    "pagination": {
+      "count": 1,
+      "totalPages": 1,
+      "isNext": false,
+      "isPrev": false,
+      "nextPage": null
+    }
   }
 }
 ```
 
-### Response (Missing / invalid file) — `400 Bad Request`
+---
 
+### `POST /api/v1/dashboard/media-content/grab-your-superpowers/`
+
+Create a Grab Your Superpowers session. **Admin only.**
+
+**Full request body:**
+```json
+{
+  "title": "Cracking the Case Interview",
+  "date": "2025-10-02",
+  "time": "17:30",
+  "description": "Learn frameworks for structured problem solving.",
+  "performer": "Rahul Krishnan",
+  "designation": "Strategy Consultant",
+  "campus": "IIM Kozhikode",
+  "link": "https://meet.google.com/gys-session2"
+}
+```
+
+**Minimal request (required fields only):**
+```json
+{
+  "title": "Quick Superpower Talk",
+  "date": "2025-10-10",
+  "campus": "CUSAT"
+}
+```
+
+**200 OK:**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Grab Your Superpowers session created successfully."] },
+  "response": {
+    "id": "23bc45de-67fa-8901-2345-6789abcdef01",
+    "title": "Cracking the Case Interview",
+    "date": "2025-10-02",
+    "time": "17:30:00",
+    "description": "Learn frameworks for structured problem solving.",
+    "performer": "Rahul Krishnan",
+    "designation": "Strategy Consultant",
+    "campus": "IIM Kozhikode",
+    "link": "https://meet.google.com/gys-session2",
+    "status": "upcoming",
+    "created_at": "2025-06-27T11:15:00.000000Z",
+    "updated_at": "2025-06-27T11:15:00.000000Z"
+  }
+}
+```
+
+**400 — Missing required fields:**
 ```json
 {
   "hasError": true,
   "statusCode": 400,
-  "message": { "general": ["Invalid file type. Please upload a CSV file."] },
+  "message": {
+    "general": ["Invalid data."],
+    "campus": ["This field is required."]
+  },
+  "response": {}
+}
+```
+
+**400 — Wrong time format:**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": {
+    "general": ["Invalid data."],
+    "time": ["Time has wrong format. Use one of these formats instead: hh:mm."]
+  },
+  "response": {}
+}
+```
+
+**400 — Wrong date format:**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": {
+    "general": ["Invalid data."],
+    "date": ["Date has wrong format. Use one of these formats instead: YYYY-MM-DD."]
+  },
   "response": {}
 }
 ```
 
 ---
 
-## Bulk Export
+### `GET /api/v1/dashboard/media-content/grab-your-superpowers/{record_id}/`
 
-Download a CSV export of all active (non-deleted) records for a specific content type.
+Retrieve a single session. **Public.**
 
-- **URL:** `/api/v1/dashboard/media-content/bulk/export/{content_type}/`
-- **Method:** `GET`
-- **Authorization:** Bearer Token (Roles: Admin, Associate, IG Lead)
+**200 OK:**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Grab Your Superpowers session retrieved."] },
+  "response": {
+    "id": "12ab34cd-56ef-7890-1234-56789abcdef0",
+    "title": "Unlock Your Product Sense",
+    "date": "2025-09-12",
+    "time": "15:00:00",
+    "description": "A workshop on developing product intuition through real case studies.",
+    "performer": "Anjali Menon",
+    "designation": "Product Manager, Zoho",
+    "campus": "College of Engineering Trivandrum",
+    "link": "https://meet.google.com/gys-session1",
+    "status": "upcoming",
+    "created_at": "2025-06-27T11:00:00.000000Z",
+    "updated_at": "2025-06-27T11:00:00.000000Z"
+  }
+}
+```
 
-### URL Parameters
-
-| Parameter | Required | Values |
-|-----------|----------|--------|
-| `content_type` | ✅ | `office_hours`, `salt_mango_tree`, `inspiration_station` |
-
-### Response (Success) — `200 OK`
-
-- **Content-Type:** `text/csv`
-- **Content-Disposition:** `attachment; filename="<content_type>_export.csv"`
-- **Body:** Downloadable CSV file. Does not return JSON.
-
-> **Note:** The `poster_thumbnail` column in exported CSVs contains the fully resolved absolute URL (e.g. `https://yourdomain.com/media/media_content/posters/<uuid>.jpg`).
-
-### Response (Invalid content type) — `400 Bad Request`
-
+**400 — Not found or soft-deleted:**
 ```json
 {
   "hasError": true,
   "statusCode": 400,
-  "message": { "general": ["Invalid content type. Must be office_hours, salt_mango_tree, or inspiration_station."] },
+  "message": { "general": ["Grab Your Superpowers session not found."] },
   "response": {}
 }
 ```
+
+---
+
+### `PATCH /api/v1/dashboard/media-content/grab-your-superpowers/{record_id}/`
+
+Partially update a session. **Admin only.** All fields optional.
+
+**Request (reschedule time and update link):**
+```json
+{
+  "time": "16:00",
+  "link": "https://meet.google.com/gys-session1-v2"
+}
+```
+
+**200 OK:**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Grab Your Superpowers session updated."] },
+  "response": {
+    "id": "12ab34cd-56ef-7890-1234-56789abcdef0",
+    "title": "Unlock Your Product Sense",
+    "date": "2025-09-12",
+    "time": "16:00:00",
+    "description": "A workshop on developing product intuition through real case studies.",
+    "performer": "Anjali Menon",
+    "designation": "Product Manager, Zoho",
+    "campus": "College of Engineering Trivandrum",
+    "link": "https://meet.google.com/gys-session1-v2",
+    "status": "upcoming",
+    "created_at": "2025-06-27T11:00:00.000000Z",
+    "updated_at": "2025-06-27T12:00:00.000000Z"
+  }
+}
+```
+
+---
+
+### `DELETE /api/v1/dashboard/media-content/grab-your-superpowers/{record_id}/`
+
+Soft-delete a session. **Admin only.**
+
+**200 OK:**
+```json
+{
+  "hasError": false,
+  "statusCode": 200,
+  "message": { "general": ["Grab Your Superpowers session deleted."] },
+  "response": {}
+}
+```
+
+**400 — Record not found:**
+```json
+{
+  "hasError": true,
+  "statusCode": 400,
+  "message": { "general": ["Grab Your Superpowers session not found."] },
+  "response": {}
+}
+```
+
+---
+
+## Bulk Import / Export
+
+`grab_your_superpowers` is a supported value for the `content_type` column in CSV bulk import (`POST /media-content/bulk/import/`) and is a valid path segment for bulk export (`GET /media-content/bulk/export/grab_your_superpowers/`). CSV rows use the same field names as the write serializer above (`title`, `date`, `time`, `description`, `performer`, `designation`, `campus`, `link`).
 
 ---
 
@@ -1001,9 +1093,6 @@ Download a CSV export of all active (non-deleted) records for a specific content
 | Wrong type ID on wrong endpoint | `400` | `true` | `"<Type> not found."` |
 | Non-admin write attempt | `400` | `true` | `"You do not have the required role..."` |
 | No / invalid JWT | `401` / `403` | `true` | `"Invalid token header"` |
-| Invalid poster image type | `400` | `true` | `"Invalid image type. Allowed: gif, jpeg, jpg, png, webp"` |
-| Poster image too large | `400` | `true` | `"File size exceeds 5MB limit"` |
-| Remote poster URL not reachable / not an image | `400` | `true` | `"URL did not return an image"` |
 
 ---
 
@@ -1024,16 +1113,7 @@ Download a CSV export of all active (non-deleted) records for a specific content
 | `office_hours` | Office Hours |
 | `salt_mango_tree` | Salt Mango Tree |
 | `inspiration_station` | Inspiration Station Radio |
+| `grab_your_superpowers` | Grab Your Superpowers |
 
 ---
 
-## Implementation Notes
-
-- All `id` fields are **UUID v4** strings.
-- `created_at` / `updated_at` are ISO 8601 UTC timestamps.
-- `status` is **computed at read time** (`date > today` → upcoming, `date == today` → ongoing, `date < today` → completed) — not stored in the DB.
-- `content_type` is **automatically set** by the endpoint — it cannot be overridden via the request body.
-- Soft-deleted records (`deleted_at IS NOT NULL`) are **invisible** to all list and detail endpoints.
-- An ID from one content type is **not accessible** through another type's endpoint (e.g. an SMT id on the Office Hours detail URL returns 400).
-- `poster_thumbnail` images are stored under `MEDIA_ROOT/media_content/posters/` as `<uuid>.<ext>`. Old files are automatically cleaned up when a poster is replaced via PATCH.
-- The `poster_thumbnail` field is **exclusive to Office Hours** — SMT and Inspiration Station do not use it.
