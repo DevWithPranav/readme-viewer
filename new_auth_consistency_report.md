@@ -29,12 +29,16 @@
 
 Status key: ✅ Done · 🟡 Partly done · ❌ Not done · ➖ No change needed
 
+Section 4 lists **26** backend and authserver changes that touch the dashboard:
+
 | | Count |
 |---|---|
-| ✅ Already done in the dashboard | **9** |
+| ✅ Already done in the dashboard | **5** |
 | 🟡 Partly done (started, but has a gap or bug) | **4** |
-| ❌ Not done yet | **9** |
-| ➖ Backend or auth server changed, but the dashboard needs no change | **7** |
+| ❌ Not done yet | **10** |
+| ➖ The dashboard needs no change | **7** |
+
+The open work is grouped into **13 to-do items (D1 – D13)** in [Section 5](#5-details-what-to-do-for-each-open-item).
 
 The dashboard branch already has the core of "Sign in with muLearn":
 - PKCE sign-in with a server-side code exchange.
