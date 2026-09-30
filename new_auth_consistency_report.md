@@ -1,7 +1,7 @@
-# "Sign in with muLearn": Change Log & Consistency Check
+# "Sign in with muLearn": Dashboard Changes Needed
 
-> **Scope:** the new auth system across the three repos: **authserver**, **mulearnbackend** and **mulearn-dashboard**.
-> **Goal:** list what changed in each repo, then check that the dashboard work matches what the backend and the auth server actually do.
+> **What this doc answers:** the backend and the auth server changed for the new auth system. **What must change in the dashboard because of that, and how much of it is already done?**
+> **Repos:** authserver `feat/new-auth` · mulearnbackend `feat/new-auth` · mulearn-dashboard `feat/sign-in-with-mulearn` (gtech-mulearn)
 > **Review date:** 2026-09-30
 > **Type:** read-only review. No code was changed in any of the three repos.
 
@@ -12,38 +12,42 @@
 1. [Summary](#1-summary)
 2. [Branches Reviewed](#2-branches-reviewed)
 3. [How the New Auth Works (Short Version)](#3-how-the-new-auth-works-short-version)
-4. [Change Log: Auth Server](#4-change-log-auth-server)
-5. [Change Log: Backend](#5-change-log-backend)
-6. [Change Log: Dashboard](#6-change-log-dashboard)
-7. [Contract Check: What Matches](#7-contract-check-what-matches)
-8. [Issues Found](#8-issues-found)
-9. [Missing Pieces in the Dashboard](#9-missing-pieces-in-the-dashboard)
-10. [Environment Variables: Must Match Across Repos](#10-environment-variables-must-match-across-repos)
-11. [Setup & Deploy Order](#11-setup--deploy-order)
-12. [Test Checklist Before Turning It On](#12-test-checklist-before-turning-it-on)
+4. [Dashboard Change List (Main Section)](#4-dashboard-change-list-main-section)
+5. [Details: What to Do for Each Open Item](#5-details-what-to-do-for-each-open-item)
+6. [Also Needed Outside the Dashboard](#6-also-needed-outside-the-dashboard)
+7. [Change Log: Auth Server](#7-change-log-auth-server)
+8. [Change Log: Backend](#8-change-log-backend)
+9. [Change Log: Dashboard (What the Frontend Dev Already Did)](#9-change-log-dashboard-what-the-frontend-dev-already-did)
+10. [Contract Check: What Matches](#10-contract-check-what-matches)
+11. [Environment Variables: Must Match Across Repos](#11-environment-variables-must-match-across-repos)
+12. [Setup & Deploy Order](#12-setup--deploy-order)
+13. [Test Checklist](#13-test-checklist)
 
 ---
 
 ## 1. Summary
 
-The **token contract is consistent**. The token format, JWKS location, audience, `sub` claim, scopes, PKCE and refresh rotation all line up across the three repos. The backend accepts both the old and new token formats. The onboarding field and the Google `state` fix also match on both sides.
+Status key: ✅ Done · 🟡 Partly done · ❌ Not done · ➖ No change needed
 
-The problems are in the **dashboard session handling around the flag (`OIDC_ENABLED`)**. These do not show up in local dev. They will show up the day the flag is turned on:
+| | Count |
+|---|---|
+| ✅ Already done in the dashboard | **9** |
+| 🟡 Partly done (started, but has a gap or bug) | **4** |
+| ❌ Not done yet | **9** |
+| ➖ Backend or auth server changed, but the dashboard needs no change | **7** |
 
-| # | Severity | Issue (short) | Repo to fix |
-|---|---|---|---|
-| 1 | 🔴 High | Logout does not log out. The user is signed straight back in with no password. | dashboard |
-| 2 | 🔴 High | Turning the flag on logs out **every** existing user within 15 minutes, although the comments say it does not. | dashboard |
-| 3 | 🔴 High | `redirect_uri` is built from the request origin. On Netlify that is the deploy permalink, not `app.mulearn.org`. | dashboard |
-| 4 | 🔴 High | `/oauth/token/` has a per-IP limit of 120/min, and every dashboard refresh comes from the dashboard server's IP. At scale users get 429, and the dashboard then logs them out. | authserver + dashboard |
-| 5 | 🟠 Medium | The browser-side refresh cannot work with OIDC (the refresh token is httpOnly, and the call goes to the legacy endpoint). The user is bounced and loses the current page every 15 min. | dashboard |
-| 6 | 🟠 Medium | No single-flight on refresh. Parallel refreshes look like token theft, and authserver revokes the whole session. | dashboard |
-| 7 | 🟠 Medium | A failed sign-in makes `/login` loop straight back to the provider, and the error is never shown. | dashboard |
-| 8 | 🟠 Medium | `/register` still uses legacy signup when the flag is on, so new users get legacy tokens (then issue #2 hits them). | dashboard |
-| 9 | 🟠 Medium | A password change now signs the user out everywhere, but the dashboard does not tell them or log them out. | dashboard |
-| 10–17 | 🟡 Low / ℹ️ Info | Config must match exactly, CORS lists, revocation window, missing admin UI, forgot-password link, env validation, branch drift. | all |
+The dashboard branch already has the core of "Sign in with muLearn":
+- PKCE sign-in with a server-side code exchange.
+- Refresh token stored httpOnly and rotated on every refresh.
+- The edge proxy reads the new token format.
+- The onboarding field.
+- The Google `state` fix.
 
-Full details and fixes are in [Section 8](#8-issues-found).
+What is missing is mostly **session handling around the switch**: logout, refresh, the flag, register and password change.
+
+**One item needs attention even with the flag OFF** ([D1](#d1)). The backend branch changed the error body it returns for an expired or missing token. The dashboard no longer recognises it, so **it never refreshes**. As soon as that backend is deployed, users see "Token expired" errors instead of a silent refresh.
+
+**Must fix before turning `OIDC_ENABLED` on:** [D1](#d1), [D2](#d2), [D3](#d3), [D4](#d4), [D5](#d5).
 
 ---
 
@@ -55,11 +59,9 @@ Full details and fixes are in [Section 8](#8-issues-found).
 | mulearnbackend | `DevWithPranav/mulearnbackend` → `feat/new-auth` | `205a9acf` (2026-09-24) | `gtech-mulearn/mulearnbackend` `dev` | 26 files, +2047 / −168 |
 | mulearn-dashboard | `gtech-mulearn/mulearn-dashboard` → `feat/sign-in-with-mulearn` | `c3a01d1` (2026-08-25) | `gtech-mulearn/mulearn-dashboard` `dev` | 22 files, +1168 / −45 |
 
-**Timing matters here.** The dashboard work is **one commit from 2026-08-25**. The backend and authserver got several more commits on **2026-09-24** (session revocation, admin console, password ownership, token refactor). So the dashboard was built against an older version of the other two. Every issue below was checked against the **latest** backend and authserver code.
+**Timing matters here.** The dashboard work is **one commit from 2026-08-25**. The backend and authserver got more commits on **2026-09-24**: session revocation, the admin console, password moving to authserver, and the token refactor. So the dashboard was built against an older version of the other two, and several ❌ items below come from those later commits.
 
-Other notes:
-- The backend branch already merges `gtech-mulearn/mulearnbackend` → `feat/sign-in-with-mulearn` (`f0132c5`, the onboarding + revocation helpers).
-- The dashboard branch is **133 commits behind** dashboard `dev`. Only `src/api/endpoints.ts` changed on both sides, so expect one small merge conflict.
+The dashboard branch is also **133 commits behind** dashboard `dev`. Only `src/api/endpoints.ts` changed on both sides, so expect one small merge conflict.
 
 ---
 
@@ -89,379 +91,321 @@ Browser                Dashboard server (Next.js BFF)        authserver (auth.mu
    |                                                                                                      | check scope, load roles from DB
 ```
 
-Key ideas:
-- **authserver** is the only service that **mints** tokens. It signs with a private RSA key.
-- **backend** only **verifies** tokens, using the public keys from JWKS. It no longer holds a secret that can mint new-format tokens.
-- **New tokens carry no roles and no muid.** The backend reads them from its own DB on every request, so a role change takes effect right away.
-- **Both token formats work in the backend** during the move. The old HS256 path is removed once `logs/auth_migration.log` shows zero legacy use for 7 days.
+- **authserver** is the only service that mints tokens (private RSA key).
+- **backend** only verifies them (public keys from JWKS). It accepts **both** old HS256 and new RS256 tokens during the move.
+- **New tokens carry no roles and no muid.** The backend loads them from its DB on every request.
 
 ---
 
-## 4. Change Log: Auth Server
+## 4. Dashboard Change List (Main Section)
 
-Branch `feat/new-auth`, 7 commits (Pranav P, awindsr).
+Each row is a change in the **backend** or **authserver**, what the **dashboard** must do because of it, and whether the frontend dev has **already done it**.
 
-### 4.1 New: OIDC provider ("Sign in with muLearn")
-- Uses **django-oauth-toolkit**, mounted at `/oauth/`:
-  - `/oauth/authorize/`, `/oauth/token/`, `/oauth/revoke_token/`, `/oauth/introspect/`, `/oauth/userinfo/`, `/oauth/logout/`
-  - `/oauth/.well-known/openid-configuration`, `/oauth/.well-known/jwks.json`
-  - also `/.well-known/openid-configuration` at the root
-  - **Not mounted on purpose:** self-service client registration, dynamic registration, device flow, token management pages.
-- **Access token:** RS256 JWT (RFC 9068, `typ: at+jwt`), **15 min**. Claims: `iss, sub, aud, client_id, scope, iat, exp, jti`. **No roles and no muid.**
-- **Refresh token:** opaque random string, **7 days**. **Rotated on every use.** Reusing an old one **revokes the whole family**. Grace period is 0.
-- **ID token:** 15 min. It adds `name`, `email` and `muid` (display only).
-- **PKCE S256 required** for every client. Only the `code` response type. Implicit and password grants are off. All RFC 9700 flags are on.
-- **Scopes:** `openid`, `profile`, `email`, `mulearn.read`, `mulearn.write`. **`mulearn.*` only for first-party clients** (`skip_authorization=True`).
-- **Suspended users cannot refresh.** `prompt=none` (silent sign-in) is supported.
-- `/oauth/token/` is **rate limited per IP** (120/min). A parallel-refresh race returns a normal `invalid_grant`, not a 500.
-- Redirect URIs must be `https`, `mulearn://`, or `http://localhost` (only when `ALLOW_LOCALHOST_REDIRECTS=True`). Matching is exact.
+### 4.1 Caused by authserver changes
 
-### 4.2 New: Pages & JSON API for sign-in
-- Server-rendered pages: `/accounts/login/`, `/accounts/signup/`, `/accounts/logout/`.
-- JSON API for the upcoming auth UI (`/accounts/api/`): `csrf`, `login`, `otp/request`, `signup`, `signup-context`, `google/start`, `google/callback`, `client`, `me`, `logout`, `consent`, `password/forgot`, `password/verify`, `password/reset`.
-- Signup calls **backend** `POST /api/v1/protected/identity/provision-member/`, so muid, wallet, level and role are still created in one place.
-
-### 4.3 New: Internal API for the backend (`/api/v1/internal/`, `protectionKey`)
-`password/change/`, `password/set/`, `sessions/revoke/`, `maintenance/cleartokens/`, `admin/login-attempts/`, `admin/security-posture/`, `admin/signin-policy/`, `admin/clients/`, `admin/clients/<id>/`, `admin/clients/<id>/disable/`, `admin/clients/<id>/enable/`
-
-### 4.4 Data & sessions
-- The `user` table is now `AUTH_USER_MODEL`. The OAuth tables are `managed = False` and owned by **db-scripts `alter-1.89.sql`**.
-- Django sessions are stored in **Redis**. `SessionRevocationMiddleware` ends auth.mulearn.org sessions after "revoke all sessions".
-- `revoke_all_sessions` covers the legacy `global_logout` key, auth.mulearn.org browser sessions, and all OIDC refresh and access tokens.
-- Management commands: `register_oauth_client`, `verify_oidc_flow`.
-
-### 4.5 Security fixes to the legacy `/api/v1/auth/*`
-| Fix | What changed |
-|---|---|
-| F5 | Google and Apple web sign-in now issue a single-use `state` and check it on the callback. The response now includes `state`. |
-| F4 | The Google mobile ID token **audience** is checked against `GOOGLE_ALLOWED_CLIENT_IDS`. |
-| F1 | The Apple identity token **signature** is now verified. The client-sent email fallback was removed. |
-| F18 | Removed the hidden `flag_register_*` login bypass. |
-| F7 | `request-otp` no longer tells whether an account exists. |
-| F6 | Refresh-token revocation check **fails closed** (503) if Redis is down. |
-| F9 | `token-verification` uses a constant-time key check and logs every use. |
-| F14 | Geolocation lookup has a timeout and uses the real client IP. |
-| F17 | CORS allowlist instead of `CORS_ALLOW_ALL_ORIGINS`. |
-| OTP | An OTP can be used once (race fixed). |
-| Policy | Brute-force limits can be edited by an admin (shared by legacy and OIDC login). |
-
-### 4.6 Other
-- Per-IP limits: login 30/min, OTP 10/10 min, password forgot 10/h, signup 20/h, token 120/min, Google 30/min.
-- A separate `security.log` records things like `token.reuse_detected`.
-- A large test suite plus a CI workflow.
-
----
-
-## 5. Change Log: Backend
-
-Branch `feat/new-auth`, compared with upstream `dev`.
-
-### 5.1 Token verification: both formats (`utils/token_verification.py`, `utils/permission.py`)
-- **RS256 (new):** verified against authserver's **JWKS** at `{OIDC_ISSUER}/oauth/.well-known/jwks.json`. Checks `iss`, `aud` (`OIDC_AUDIENCE`), `exp` and the signature.
-  - The JWKS cache lasts 1 h. There is at most 1 fetch per 5 s, and the last good keys are kept if authserver is down.
-- **HS256 (legacy):** verified with `SECRET_KEY`, including the custom `expiry` field.
-- The format is picked from the token header. An HS256 token is **never** checked with a public key, which blocks algorithm confusion.
-- **Scope check (new tokens only):** `GET/HEAD/OPTIONS` needs `mulearn.read` or `mulearn.write`. Everything else needs `mulearn.write`.
-- **Roles and muid** for new tokens come from the DB (`UserRoleLink`, `User`).
-- **F10 fix:** the token is verified **once per request** and cached. `fetch_role`, `fetch_user_id` and `fetch_muid` all read that one result. Before, they skipped the expiry check.
-- A per-format counter goes to `logs/auth_migration.log` (`mulearn.token_format`).
-
-### 5.2 Password now owned by authserver
-- `ResetPasswordAPI` (change password in settings) calls authserver `password/change/`.
-- `ResetPasswordConfirmAPI` (forgot-password link) calls authserver `password/set/`.
-- Both **sign the user out everywhere** (F3). If that partly fails, a Celery task and a sweep keep retrying (`mu_celery/auth_session_tasks.py`, at :07/:22/:37/:52).
-- `utils/authserver_client.py` makes these calls with a timeout (3 s connect, 10 s read).
-
-### 5.3 New endpoints
-| Endpoint | Who calls it | Notes |
-|---|---|---|
-| `POST /api/v1/protected/identity/provision-member/` | authserver signup | `protectionKey`, constant-time check, runs in a transaction, returns `already_exists` for a duplicate email |
-| `/api/v1/dashboard/auth-admin/login-attempts/` | dashboard (admin) | Admin role only |
-| `/api/v1/dashboard/auth-admin/security-posture/` | dashboard (admin) | |
-| `/api/v1/dashboard/auth-admin/signin-policy/` | dashboard (admin) | GET / PUT |
-| `/api/v1/dashboard/auth-admin/clients/` | dashboard (admin) | GET / POST |
-| `/api/v1/dashboard/auth-admin/clients/<id>/` | dashboard (admin) | GET / PATCH |
-| `/api/v1/dashboard/auth-admin/clients/<id>/disable/` and `enable/` | dashboard (admin) | POST |
-| `/api/v1/dashboard/auth-admin/sessions/revoke/` | dashboard (admin) | POST |
-
-Every admin action is written to `SystemActionLog`. It uses **6 new enum values** (`AUTH_CLIENT_*`, `AUTH_POLICY_UPDATE`, `AUTH_SESSION_REVOKE`), so the **DB ENUM must be altered first**, or MySQL stores `''`.
-
-### 5.4 Changes the dashboard can see
-- `GET /api/v1/dashboard/user/info/` now also returns:
-  ```json
-  "onboarding": { "state": "COMPLETE" | "INCOMPLETE", "missing": ["interests"], "exempt": false }
-  ```
-  `Company` role → `{"state": "COMPLETE", "missing": [], "exempt": true}`. `user_domains` is still returned.
-- `forgot-password` now always says *"If an account exists for that ID, a password reset link has been sent."*
-- Throttles (per IP): email check 20/min, password reset 5/hour, registration 10/hour.
-- The change-password response can be a **failure** even when the password **did** change. See [issue #9](#issue-9).
-- CORS allowlist (`CORS_ALLOWED_ORIGINS`) replaces allow-all.
-
-### 5.5 Other
-- Celery beat: `clear-expired-auth-tokens-cron` runs hourly at :50 and calls authserver `maintenance/cleartokens/`.
-- `db/user.py`: `deleted_at` and `deleted_by` are declared but not enforced. `last_login` is **not** declared on purpose (see the comment there).
-- Legacy signups are counted (`mulearn.legacy_signup`).
-- Unrelated side change: achievement views no longer send raw exception text to the client.
-
----
-
-## 6. Change Log: Dashboard
-
-Branch `feat/sign-in-with-mulearn`, one commit `c3a01d1` (awindsr, 2026-08-25).
-
-### 6.1 New "Sign in with muLearn" flow (behind a flag)
-| File | What it does |
-|---|---|
-| `src/app/(auth)/login/page.tsx` | If `OIDC_ENABLED === "true"`, redirect to `/api/auth/oidc/start?ruri=…`. Otherwise show the old form. |
-| `src/app/api/auth/oidc/start/route.ts` | Creates the PKCE verifier, challenge and state. Stores `oidc_verifier`, `oidc_state` and `oidc_return` in httpOnly cookies (10 min). Redirects to `{issuer}/oauth/authorize/` with scope `openid profile email mulearn.read mulearn.write`. |
-| `src/app/api/auth/oidc/callback/route.ts` | Clears the flow cookies, checks `state`, and POSTs to `{issuer}/oauth/token/` with the verifier. Sets `refreshToken` (httpOnly, 7 d), `accessToken` (JS-readable, `expires_in`) and `isAuthenticated`. |
-| `src/app/api/auth/refresh/route.ts` | If the flag is on, calls `refreshOidcSession` and **stores the rotated refresh token**. Otherwise uses the legacy refresh. |
-| `src/app/api/auth/logout/route.ts` | If the flag is on, POSTs the refresh token to `{issuer}/oauth/revoke_token/`. Otherwise uses the legacy logout. |
-| `src/lib/auth/pkce.ts` | Verifier, S256 challenge, state, constant-time compare. |
-| `src/lib/auth/oidc-refresh.ts` | Refresh-token grant with rotation and a 10 s timeout. |
-
-### 6.2 Changes that work with or without the flag
-| File | What changed |
-|---|---|
-| `src/proxy.ts` | Reads both `exp` (new) and `expiry` (legacy). If the token has **no `roles` claim**, it returns `null` and **lets the request through**, because the server checks roles. |
-| `src/app/(dashboard)/onboarding-guard.tsx` | Uses the server's `onboarding.state`. Falls back to the old `user_domains` rule. |
-| `src/features/auth/schemas/auth.schema.ts` | Optional `onboarding` field. Google auth URL response now **requires** `state`. |
-| `src/lib/auth/oauth-state.ts` + `use-google-login.ts` + `callback-page-client.tsx` + `endpoints.ts` | Legacy Google flow: remembers `state` in sessionStorage, checks it on return, and sends it to the callback (F5). |
-| `.env.example` | `NEXT_PUBLIC_OIDC_ISSUER`, `NEXT_PUBLIC_OIDC_CLIENT_ID`, `OIDC_ENABLED`. |
-| `package.json`, `.github/workflows/ci.yml` | `vitest` test job (3 known-broken suites excluded by name). |
-| tests | `pkce.test.ts`, `oauth-state.test.ts`, `token-expiry.test.ts`. |
-
----
-
-## 7. Contract Check: What Matches
-
-✅ = consistent  ⚠️ = works only with the right config  ❌ = mismatch (see Section 8)
-
-| Item | authserver | backend | dashboard | Status |
+| ID | authserver change | What the dashboard must do | Status | Where in dashboard |
 |---|---|---|---|---|
-| Authorize / token / revoke URLs | `/oauth/authorize/`, `/oauth/token/`, `/oauth/revoke_token/` | – | same paths | ✅ |
-| JWKS URL | `/oauth/.well-known/jwks.json` | `{OIDC_ISSUER}/oauth/.well-known/jwks.json` | – | ✅ |
-| Signing | RS256, `kid` = key thumbprint (same as JWKS) | RS256 via PyJWKClient, looks up key by `kid` | – | ✅ |
-| `iss` | `OIDC_ISSUER` | `OIDC_ISSUER`, exact match | `NEXT_PUBLIC_OIDC_ISSUER` (used for URLs) | ⚠️ must be the **same string** ([#10](#issue-10)) |
-| `aud` | `OIDC_ACCESS_TOKEN_AUDIENCE` = `mulearn-api` | `OIDC_AUDIENCE` = `mulearn-api` | – | ✅ (defaults match) |
-| User id | `sub` = `user.id` | `sub` → `user_id` (same `user` table) | not read | ✅ |
-| Expiry claim | `exp` (seconds) | enforced by PyJWT | proxy reads `exp * 1000` | ✅ |
-| Roles / muid in token | not included | loaded from DB | proxy defers on `null`; UI gets roles from `/user/info/` | ✅ |
-| Scopes | `mulearn.*` for first-party only | GET needs read, others need write | asks for `openid profile email mulearn.read mulearn.write` | ⚠️ client must be `--skip-authorization` ([#11](#issue-11)) |
-| PKCE | required, S256 only | – | S256 | ✅ |
-| Client type | public or confidential | – | public (no secret sent) | ⚠️ must register as `--public` ([#11](#issue-11)) |
-| Access token life | 900 s | – | cookie = `expires_in` | ✅ |
-| Refresh rotation + reuse detection | on, grace 0 | – | stores new token | ✅ (but see [#6](#issue-6)) |
-| Refresh token life | 7 days | – | cookie 7 days | ✅ |
-| Legacy Google `state` | issued in `signin-with-google`, consumed in callback | – | stored, checked, forwarded | ✅ |
-| Onboarding object | – | `{state, missing, exempt}` | `z.object({state: enum, missing: string[], exempt: boolean})` | ✅ |
-| Company role title | – | `"Company"` | `ROLES.COMPANY = "Company"` | ✅ |
-| Backend → authserver internal paths | 11 routes | `password/change`, `password/set`, `sessions/revoke`, `maintenance/cleartokens`, `admin/*` | – | ✅ all match |
-| authserver → backend provision path | `/api/v1/protected/identity/provision-member/` | same | – | ✅ |
-| `PROTECTED_API_KEY` | used both ways | used both ways | – | ⚠️ must be the same value |
-| RP logout (`/oauth/logout/`) | enabled | – | **not used** | ❌ [#1](#issue-1) |
-| Old ↔ new token switch | – | accepts both | refresh picks path by **flag**, not by token | ❌ [#2](#issue-2) |
-| Password change signs you out | yes | yes | not handled | ❌ [#9](#issue-9) |
-| Admin console | internal API ready | 8 endpoints ready | **no UI** | ❌ [#14](#issue-14) |
+| A1 | New OIDC provider: `/oauth/authorize/`, `/oauth/token/`, PKCE **S256 required** | Start the sign-in on the server: make the verifier and state, keep them in httpOnly cookies, exchange the code on the server | 🟡 Built, but the redirect URI is wrong on Netlify → [D4](#d4). A failed sign-in loops → [D8](#d8) | `api/auth/oidc/start`, `api/auth/oidc/callback` |
+| A2 | Access token is **RS256** with `exp` (seconds), **no `roles` claim** | Edge proxy must read `exp`, and must not treat "no roles" as "no access" | ✅ Done | `src/proxy.ts` |
+| A3 | Refresh token is **rotated** on every use. Reusing an old one **revokes the whole session**. Grace period is 0 | Save the new refresh token after every refresh, and refresh **single-flight** (never two at once) | 🟡 Saving is ✅. Single-flight is ❌ → [D7](#d7) | `api/auth/refresh/route.ts` |
+| A4 | New refresh token is an **opaque string** that only `/oauth/token/` accepts. The old JWT refresh token only works on the legacy endpoint | Choose the refresh / logout method by **token type**, not by the flag | ❌ → [D3](#d3) | `refresh/route.ts`, `logout/route.ts`, `api/server.ts`, `api/refresh.client.ts` |
+| A5 | Refresh token is **httpOnly** (JS cannot read it) | Browser-side refresh must go through a same-origin dashboard route | ❌ → [D6](#d6) | `api/refresh.client.ts`, `api/client.ts` |
+| A6 | `/oauth/revoke_token/` and **RP-initiated logout** `/oauth/logout/` are enabled | On logout, revoke the token **and** end the auth.mulearn.org session | 🟡 Revoke is ✅. Provider logout is ❌ → [D2](#d2) | `logout/route.ts`, topbar, sidebar |
+| A7 | `mulearn.read` / `mulearn.write` allowed for **first-party** clients only | Request `openid profile email mulearn.read mulearn.write` | ✅ Done (client must be registered `--public --skip-authorization`, see [§6](#6-also-needed-outside-the-dashboard)) | `oidc/start/route.ts` |
+| A8 | Signup now lives on authserver (`/accounts/signup/`) and creates the member through the backend | When the flag is on, `/register` should send people to the provider signup | ❌ → [D9](#d9) | `(auth)/register` |
+| A9 | Legacy Google web sign-in now **issues and checks `state`** (F5). The response includes `state` | Remember `state`, check it on return, and send it to the callback | ✅ Done | `oauth-state.ts`, `use-google-login.ts`, `callback-page-client.tsx`, `endpoints.ts`, schema |
+| A10 | Legacy Apple web sign-in also uses `state` now | – | ➖ No change: the Apple button is commented out in the dashboard | – |
+| A11 | `request-otp` now always answers *"If an account exists…, an OTP has been sent"* (F7) | – | ➖ No change: the dashboard shows the backend message | `use-request-otp.ts` |
+| A12 | Legacy refresh `/api/v1/auth/get-access-token/` now returns **503** when Redis is down (fails closed, F6) | Treat 503 as "try again", not "log out" | ❌ → part of [D5](#d5) | `refresh.server.ts`, `refresh.client.ts` |
+| A13 | `/oauth/token/` is **rate limited per IP** (120/min) | Treat **429** as "try again", not "log out". authserver must also change its limit ([§6](#6-also-needed-outside-the-dashboard)) | ❌ → [D5](#d5) | `oidc-refresh.ts`, `refresh/route.ts` |
+| A14 | New config: issuer and client id per environment | Add env vars, and fail at build time if they are missing | 🟡 In `.env.example` ✅. Not validated, and there is no fixed redirect URI var ❌ → [D12](#d12) | `.env.example`, `config/env.ts` |
+| A15 | CORS changed from allow-all to an allowlist (F17) | – (config only: add every dashboard origin) | ➖ No code change | – |
+
+### 4.2 Caused by backend changes
+
+| ID | backend change | What the dashboard must do | Status | Where in dashboard |
+|---|---|---|---|---|
+| B1 | **Auth error body changed.** Expired or missing token now returns `403 {"detail": "Token expired"}`. It was `403 {"hasError": true, "message": {"general": [...]}, "statusCode": 1000}` | The dashboard must still see this as "token expired" and refresh. Best fixed in the **backend** by restoring the old body | ❌ **New, and breaks refresh even with the flag OFF** → [D1](#d1) | `api/client.ts → isTokenExpired` |
+| B2 | Backend accepts **both** token formats, and checks **scopes** on new tokens | – | ➖ No change (the dashboard asks for both scopes) | – |
+| B3 | `GET /dashboard/user/info/` adds `onboarding: {state, missing, exempt}` | Use the server's onboarding answer, with a fallback for an older backend | ✅ Done | `onboarding-guard.tsx`, `auth.schema.ts` |
+| B4 | Roles for new tokens come from the DB, not the token | Get roles from `/user/info/`, not from the token | ✅ Already so (the UI uses `/user/info/`, and only the proxy read the token) | `lib/auth/server.ts`, `proxy.ts` |
+| B5 | **Change password** now goes through authserver and **signs the user out everywhere**, including this session. A partial failure returns a **failure** response even though the password changed | After success: tell the user and sign them out. Treat "Password changed, but…" as success with a warning | ❌ → [D10](#d10) | `settings/account/change-password-form.tsx` |
+| B6 | **Reset password** (email link) now goes through authserver. The success text may say *"Signing you out of your other devices may take a few minutes"*. Can return 503 | Show the backend message | ➖ Already shows the backend message | `use-reset-password.ts` |
+| B7 | **Forgot password** always returns the same success text (F7) | – | ➖ No change | `use-forgot-password.ts` |
+| B8 | New **throttles** (per IP): email check 20/min, password reset 5/hour, registration 10/hour. They return **429** `{"detail": "Request was throttled. Expected available in N seconds."}` | Show a friendly "Too many attempts, please try again later" | ❌ (low) → [D13](#d13) | `api/client.ts`, `use-get-error` |
+| B9 | New **admin API** `/api/v1/dashboard/auth-admin/*` (8 endpoints, Admin only) | Build the admin screens | ❌ → [D11](#d11) | new pages |
+| B10 | Legacy signups are **counted** (legacy path is removed after 7 days of zero) | Stop using the legacy signup when the flag is on | ❌ same as [D9](#d9) | `(auth)/register` |
+| B11 | `user_domains` is still returned in user info | – | ➖ No change | – |
+
+### 4.3 Already done by the frontend dev (for credit and review)
+
+| ✅ Done | Files |
+|---|---|
+| PKCE (S256), `state` and the server-side code exchange | `lib/auth/pkce.ts`, `api/auth/oidc/start`, `api/auth/oidc/callback` |
+| Refresh token in an **httpOnly** cookie, access token JS-readable (matches the current app) | `oidc/callback/route.ts` |
+| Save the **rotated** refresh token on every refresh | `api/auth/refresh/route.ts`, `lib/auth/oidc-refresh.ts` |
+| Revoke the refresh token at the provider on logout | `api/auth/logout/route.ts` |
+| Proxy reads both `exp` (new) and `expiry` (old). No `roles` claim → let the server decide | `src/proxy.ts` |
+| Onboarding from the server field, with the old rule as fallback | `onboarding-guard.tsx`, `auth.schema.ts` |
+| Google `state` (browser half of F5) | `lib/auth/oauth-state.ts`, `use-google-login.ts` |
+| Feature flag `OIDC_ENABLED` (read on the server only) + env docs | `(auth)/login/page.tsx`, `.env.example` |
+| Unit tests (PKCE, state, token expiry) + a CI test job | `*.test.ts`, `.github/workflows/ci.yml`, `package.json` |
 
 ---
 
-## 8. Issues Found
+## 5. Details: What to Do for Each Open Item
 
-Each issue has: **where**, **what goes wrong**, and **how to fix**.
-
----
-
-<a id="issue-1"></a>
-### #1 🔴 Logout does not log out (user is signed straight back in)
-
-**Where:** `mulearn-dashboard/src/app/api/auth/logout/route.ts`, `src/components/dashboard/app-topbar.tsx`
-
-**What goes wrong:**
-1. The user clicks **Log out**. The route revokes the refresh token at `/oauth/revoke_token/` and deletes the cookies.
-2. The UI then does `window.location.href = "/login"`.
-3. With the flag on, `/login` redirects to `/api/auth/oidc/start` and then to `/oauth/authorize/`.
-4. The **auth.mulearn.org session cookie is still alive** (Django session in Redis). The dashboard is a first-party client (`skip_authorization`), so authserver issues a code **with no screen at all**.
-5. The user lands back on `/dashboard`, still signed in.
-
-The comment in `logout/route.ts` says it prevents exactly this: *"'sign out' followed by 'sign in' would walk straight back in without asking for a password. That is not a logout."* But revoking a token does **not** end the provider session. Only `/oauth/logout/` (RP-initiated logout) does that. This is a real risk for students on shared college lab computers.
-
-**Fix (dashboard + one registration flag):**
-- In the callback, also save `id_token` from the token response in an **httpOnly** cookie.
-- In logout: revoke the refresh token as now, then send the browser to
-  `{issuer}/oauth/logout/?id_token_hint=<id_token>&client_id=<id>&post_logout_redirect_uri=<app>/login?logged_out=1`.
-  The easiest way is for the route to return `{ logoutUrl }` and have the UI navigate there instead of `/login`.
-- Register the post-logout URI: `register_oauth_client … --post-logout-redirect-uri https://app.mulearn.org/login?logged_out=1`.
-- On `/login`, do **not** auto-redirect when `logged_out=1` is present. Show a "Signed out. Sign in again" button.
-- authserver has `OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT=False`, so **there is no confirmation screen only when a valid `id_token_hint` is sent**. That is why the id_token must be stored.
+Priority: 🔴 must fix before the flag goes on (D1 even before the backend deploys) · 🟠 should fix before going live · 🟡 can follow
 
 ---
 
-<a id="issue-2"></a>
-### #2 🔴 Turning the flag on logs everyone out (the docs say it does not)
+<a id="d1"></a>
+### D1 🔴 Dashboard no longer sees "token expired" from the backend (B1)
 
-**Where:** `mulearn-dashboard/src/app/api/auth/refresh/route.ts`, `logout/route.ts`, `src/api/server.ts`, `.env.example`, `login/page.tsx`
+**Status:** ❌ Not done. **This one breaks even with `OIDC_ENABLED` off**, as soon as the new backend is deployed.
 
-**What goes wrong:**
-`.env.example` and the login page say: *"Flipping this does NOT log anyone out … Existing sessions keep working."* But the refresh route picks its path **by the flag, not by the token**:
+**What changed in the backend:** `utils/permission.py` now raises `UnauthorizedAccessException(str(exc))` with a plain string. DRF turns that into:
 
-```ts
-if (useOidc) { refreshOidcSession(refreshToken) }   // flag on  -> /oauth/token/
-else         { refreshAccessTokenServer(refreshToken) } // flag off -> legacy
+| | HTTP | Body |
+|---|---|---|
+| Before (upstream `dev`) | 403 | `{"hasError": true, "message": {"general": ["Token Expired or Invalid"]}, "statusCode": 1000}` |
+| Now (`feat/new-auth`) | 403 | `{"detail": "Token expired"}` or `{"detail": "Invalid token header"}` |
+
+I checked this by running the old and new exception code through DRF's real exception handler.
+
+**What breaks in the dashboard:** `src/api/client.ts → isTokenExpired()` returns true only for **401**, or **`statusCode === 1000`**, or `message.general` containing "token expired". The new body matches **none** of these, so:
+- the tab sits idle for 15 min, the access-token cookie expires, and the next API call is sent with no token;
+- the backend answers `403 {"detail": "Invalid token header"}`;
+- the dashboard does **not** refresh and shows an error toast instead. It keeps failing until the user reloads the page.
+
+The mobile apps probably rely on `statusCode: 1000` in the same way.
+
+**Fix (recommended, backend):** keep the old error body for auth failures in `JWTUtils._validated`:
+```python
+except TokenError as exc:
+    raise UnauthorizedAccessException(
+        {"hasError": True, "message": {"general": [str(exc)]}, "statusCode": 1000}
+    ) from exc
 ```
+Do the same for "Invalid token header", "Token has no subject" and the scope error. Then every client keeps working unchanged.
 
-After the flag is turned on, each existing user still has a **legacy** (HS256 JWT) refresh token. At their next access-token expiry (**15 min or less**), it is sent to `/oauth/token/`. authserver answers `invalid_grant`, the route clears all cookies, and the user goes to `/login`. So **every signed-in user is logged out within 15 minutes.** Turning the flag **off** later does the same to every OIDC user, in the other direction.
+**Fix (extra safety, dashboard):** in `isTokenExpired`, also return true for `403` when `detail` matches `/token (expired|invalid)|invalid token|token header|signing keys/i`.
 
-The same mix-up exists in logout: with the flag on, a legacy token is sent to `/oauth/revoke_token/` (a silent no-op), so the legacy `global_logout` is never written.
+---
 
-**Fix:** choose the path by the **shape of the refresh token**, not by the flag. The flag should only decide where **new** sign-ins go.
-- Legacy refresh token = a JWT: 3 dot-separated parts, header `alg: HS256`.
-- OIDC refresh token = an opaque random string with no dots.
+<a id="d2"></a>
+### D2 🔴 Logout must end the auth.mulearn.org session (A6)
 
+**Status:** 🟡 Partly done. Revoking the refresh token is ✅. Ending the provider session is ❌.
+
+**What goes wrong now:** Log out → revoke → `window.location = "/login"` → (flag on) `/api/auth/oidc/start` → `/oauth/authorize/`. The **auth.mulearn.org session is still alive**, and the dashboard is first-party (`skip_authorization`), so a code is issued with no screen at all. **The user is signed straight back in.** This is a risk on shared college lab computers.
+
+**What to do:**
+1. In `oidc/callback/route.ts`, also save `tokens.id_token` in an **httpOnly** cookie (for example `idToken`, 7 days).
+2. In `logout/route.ts`: revoke as now, clear cookies, and return
+   `{ logoutUrl: "{issuer}/oauth/logout/?id_token_hint=<id>&client_id=<client>&post_logout_redirect_uri=<origin>/login?logged_out=1" }`.
+3. In `app-topbar.tsx`, `app-sidebar.tsx` and `account-settings-modal.tsx`, navigate to `logoutUrl` (when present) instead of `/login`.
+4. In `login/page.tsx`, do **not** auto-redirect when `logged_out=1`. Show a "You are signed out · Sign in" button.
+5. Register the post-logout URI on the client (see [§6](#6-also-needed-outside-the-dashboard)).
+
+Why the `id_token` is needed: authserver sets `OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT=False`. It skips its confirmation screen **only** when a valid `id_token_hint` is sent.
+
+---
+
+<a id="d3"></a>
+### D3 🔴 Choose the refresh / logout path by token type, not by the flag (A4)
+
+**Status:** ❌ Not done.
+
+**What goes wrong now:** `refresh/route.ts` uses the OIDC refresh when `OIDC_ENABLED=true` and the legacy one otherwise. After the flag goes on, every signed-in user still holds a **legacy JWT** refresh token. It is sent to `/oauth/token/`, rejected with `invalid_grant`, and the user is logged out. **Everyone is logged out within 15 minutes**, although `.env.example` says *"Flipping this does NOT log anyone out"*. Turning the flag off does the same to OIDC users. Logout has the same mix-up.
+
+**What to do:** add one helper and use it in all four places:
 ```ts
-const isLegacy = refreshToken.split(".").length === 3;
-if (isLegacy) { /* legacy refresh / legacy logout */ }
-else          { /* OIDC refresh (needs issuer + clientId) / revoke */ }
+// src/lib/auth/token-kind.ts
+/** Legacy refresh tokens are HS256 JWTs (3 dot-separated parts). OIDC ones are opaque. */
+export function isLegacyRefreshToken(token: string): boolean {
+  return token.split(".").length === 3;
+}
 ```
+| File | Change |
+|---|---|
+| `app/api/auth/refresh/route.ts` | legacy token → `refreshAccessTokenServer`; opaque token → `refreshOidcSession` (needs issuer + client id, whatever the flag) |
+| `app/api/auth/logout/route.ts` | legacy token → backend logout; opaque token → `/oauth/revoke_token/` + [D2](#d2) |
+| `api/server.ts → refreshAndSetToken()` | same split (it only knows the legacy path today) |
+| `api/refresh.client.ts` | replaced by [D6](#d6) |
 
-Apply this in `refresh/route.ts`, `logout/route.ts` and `src/api/server.ts → refreshAndSetToken()`.
-
----
-
-<a id="issue-3"></a>
-### #3 🔴 `redirect_uri` uses the request origin, which on Netlify is the deploy permalink
-
-**Where:** `mulearn-dashboard/src/app/api/auth/oidc/start/route.ts` and `callback/route.ts`
-
-```ts
-`${request.nextUrl.origin}/api/auth/oidc/callback`
-```
-
-**What goes wrong:**
-The dashboard's own comment in `refresh/route.ts` says: *"on Netlify … `request.url` inside a route handler is rebuilt from the deploy permalink — `<deploy-id>--<site>.netlify.app` — not the custom domain."* `request.nextUrl` comes from `request.url`, so in production the `redirect_uri` will very likely be `https://<deploy-id>--<site>.netlify.app/api/auth/oidc/callback`.
-- authserver uses **exact matching** of registered redirect URIs, so it rejects the request, and sign-in fails for everyone.
-- Even if that URI were registered, the PKCE and state cookies were set on `app.mulearn.org`. The callback would arrive on another origin with no cookies and fail with `signin_expired`.
-
-This does not show up on localhost, where the origin is correct.
-
-**Fix:** add a server env var, for example `OIDC_REDIRECT_URI=https://app.mulearn.org/api/auth/oidc/callback`. Use that exact value in **both** start and callback (they must send the same value), and register that exact value with `register_oauth_client`. Use one value per environment (dev, prod).
+After this, the flag only decides **where new sign-ins go**, which is what the comments already promise.
 
 ---
 
-<a id="issue-4"></a>
-### #4 🔴 `/oauth/token/` per-IP rate limit vs the dashboard's server-side refresh
+<a id="d4"></a>
+### D4 🔴 Use a fixed redirect URI from env (A1)
 
-**Where:** `authserver/muauth/security/ratelimit.py` (`"token": (120, 60)`), `authserver/muauth/views/oauth.py`. On the dashboard side: `refresh/route.ts` and `oidc-refresh.ts`.
+**Status:** 🟡 The flow is built, but the URI is taken from the request.
 
-**What goes wrong:**
-The dashboard does the code exchange and every refresh **from its server** (the BFF design, which is correct for security). So to authserver, **every dashboard user shares the dashboard server's IP bucket**: 120 requests per minute.
-- Each active user refreshes about every 15 minutes, so the limit is hit at roughly **1,800 active users per server IP**, and sooner at peak times such as exam results or event launches.
-- When it hits, authserver returns **429**. `refreshOidcSession` treats any non-2xx as `RefreshFailed`, and the refresh route **clears the cookies and logs the user out**.
-- The limit's own comment says it is sized for "a real person, or a classroom behind one NAT address", not a whole BFF.
+**What goes wrong now:** `start` and `callback` both use `${request.nextUrl.origin}/api/auth/oidc/callback`. The dashboard's own comment in `refresh/route.ts` says that **on Netlify the request URL is the deploy permalink** (`<deploy-id>--<site>.netlify.app`), not `app.mulearn.org`. authserver matches redirect URIs **exactly**, so production sign-in will very likely be refused. Even if that URI were allowed, the PKCE cookies would be on the other domain. It works on localhost, so it is easy to miss.
 
-**Fix (authserver, pick one):**
-- Rate-limit only the `authorization_code` grant per IP. The `refresh_token` grant cannot be brute-forced (it is a long random value, and reuse revokes the family).
-- Or key the limit by `client_id + IP` and give the dashboard client a much higher limit.
-- Or allowlist the dashboard's server egress IPs.
-
-**Fix (dashboard):** treat **429 / 5xx / timeout** from `/oauth/token/` as "try again later". Do **not** clear the session on them. Only `400 invalid_grant` should mean "sign in again".
+**What to do:**
+- Add a server env var `OIDC_REDIRECT_URI` (for example `https://app.mulearn.org/api/auth/oidc/callback`).
+- Use it in **both** `start/route.ts` and `callback/route.ts`. They must send the same value.
+- Register exactly that value on the client, one per environment.
 
 ---
 
-<a id="issue-5"></a>
-### #5 🟠 Browser-side refresh cannot work with OIDC
+<a id="d5"></a>
+### D5 🔴 Do not log users out on temporary errors (A12, A13)
 
-**Where:** `mulearn-dashboard/src/api/refresh.client.ts`, `src/api/client.ts`
+**Status:** ❌ Not done.
 
-**What goes wrong:**
-When an API call from the browser gets a 401, `client.ts` calls `refreshAccessToken()`. That function:
-1. reads the refresh token with `js-cookie`. The OIDC `refreshToken` cookie is **httpOnly**, so it gets `undefined`.
-2. would post to the **legacy** `/api/v1/auth/get-access-token/` anyway.
+**What goes wrong now:** `refreshOidcSession` turns **any** non-2xx or timeout into `RefreshFailed`, and the refresh route then clears the cookies. The legacy refresh does the same. But:
+- `/oauth/token/` returns **429** when its per-IP limit (120/min) is hit. **Every dashboard refresh comes from the dashboard server's IP**, so at scale everyone shares one bucket.
+- The legacy refresh returns **503** when Redis is down.
 
-So it returns `null`, and `client.ts` clears the JS cookies and does `window.location.href = "/login"`. The proxy then bounces `/login` → `/dashboard` → `/api/auth/refresh` → `/dashboard`. The user **loses the page they were on and any unsaved form input**. This happens whenever a tab is idle for more than 15 minutes and the user then clicks something that calls the API.
+In both cases users are logged out for a temporary problem.
 
-`src/api/server.ts → refreshAndSetToken()` has the same problem on the server side. It only knows the legacy refresh, and it sets `accessToken` as **httpOnly with 24 h expiry**, which does not match the rest.
-
-**Fix:** add a same-origin JSON endpoint, for example `POST /api/auth/refresh` that returns `{ accessToken }`. It does the refresh on the server (using the token-shape check from [#2](#issue-2)) and sets the cookies. `refresh.client.ts` should call it with `credentials: "include"` and keep its single-flight guard. Make `server.ts` use the same helper.
-
----
-
-<a id="issue-6"></a>
-### #6 🟠 Parallel refreshes can revoke the whole session
-
-**Where:** `mulearn-dashboard/src/app/api/auth/refresh/route.ts` together with authserver's `REFRESH_TOKEN_GRACE_PERIOD_SECONDS: 0`
-
-**What goes wrong:**
-authserver rotates refresh tokens with **no grace window**. Its settings comment says: *"Clients must refresh single-flight instead (the dashboard BFF's one same-origin refresh route)."* The dashboard refresh route has **no lock**. If two requests reach it with the same refresh token at the same moment, the second one counts as **reuse**, and authserver revokes the **whole token family** (the user is signed out on every device).
-
-Ways this can happen: Next.js `<Link>` prefetches of protected pages right after the token expires (each one goes through `proxy.ts` → `/api/auth/refresh`), or two tabs refreshing at the same second.
-
-**Fix:**
-- In `proxy.ts`, do not redirect **prefetch** requests to `/api/auth/refresh`. Check for the `Next-Router-Prefetch` or `Purpose: prefetch` header and just let them through or return 204.
-- Refresh a little **before** expiry (for example, 60 s early), from one place.
-- Test this: two tabs, token expired, click both.
-- For the long term, consider a short grace window in authserver. That needs a storage decision, because the settings comment explains it conflicts with hashed tokens.
+**What to do:**
+- In `oidc-refresh.ts`, return a separate `RefreshTemporary` error for **429, 5xx and timeouts**. Keep `RefreshFailed` for **400 `invalid_grant`** (and 401) only.
+- In `refresh/route.ts`, on `RefreshTemporary`, **keep the cookies** and send the user to a small "Connection problem, retrying…" page (or retry once after `Retry-After`). Clear the session only on `RefreshFailed`.
+- Do the same for the legacy path (503).
+- authserver must also change its `/oauth/token/` limit ([§6](#6-also-needed-outside-the-dashboard)).
 
 ---
 
-<a id="issue-7"></a>
-### #7 🟠 A failed sign-in loops back to the provider and the error is never shown
+<a id="d6"></a>
+### D6 🟠 Browser-side refresh through a dashboard route (A5)
 
-**Where:** `mulearn-dashboard/src/app/(auth)/login/page.tsx`, `oidc/callback/route.ts`
+**Status:** ❌ Not done.
 
-**What goes wrong:**
-On any failure the callback sends the user to `/login?error=signin_failed` (or `signin_expired`, `signin_mismatch`, `signin_unavailable`). With the flag on, `/login` **always** redirects straight back to `/api/auth/oidc/start` and ignores `error`. If the error keeps happening (for example `invalid_scope` because the client is not registered as first-party, or a misconfigured client), the browser loops until it shows *"Too many redirects"*, and the real reason is never shown.
+**What goes wrong now:** `refresh.client.ts` reads the refresh token with `js-cookie`. The OIDC one is **httpOnly**, so it gets `undefined`. It then calls the **legacy** endpoint anyway. So in an open tab, the first API call after 15 min redirects to `/login` → proxy → `/dashboard` → refresh. **The user loses the page they were on and any unsaved form.**
 
-**Fix:** in `login/page.tsx`, when `params.error` is set, **do not redirect**. Show a short message ("Sign-in failed. Please try again.") and a **Try again** button that links to `/api/auth/oidc/start`.
-
----
-
-<a id="issue-8"></a>
-### #8 🟠 `/register` still uses the legacy signup when the flag is on
-
-**Where:** `mulearn-dashboard/src/app/(auth)/register/*`
-
-**What goes wrong:**
-Only `/login` is switched. `/register` (and the Google sign-up path through `tempToken`) still calls the legacy `RegisterDataAPI` and gets **legacy tokens**. Because of [#2](#issue-2), those new users are logged out within 15 minutes. Each such signup also adds to the backend's `mulearn.legacy_signup` counter, which has to reach zero before the legacy path can be removed.
-
-**Fix:** when `OIDC_ENABLED` is on, send `/register` to `/api/auth/oidc/start?signup=1`. In the start route, when `signup=1` is set, build the usual `/oauth/authorize/?…` URL (with PKCE and state as now), but redirect to
-`{issuer}/accounts/signup/?next=<url-encoded /oauth/authorize/?… path>` instead of going to authorize directly.
-authserver's signup page already follows a safe `next` after the account is created, so the user comes back through the normal code flow. authserver has no `prompt=create` support, so `next` is the way to do it.
-
-Keep the old form only for when the flag is off.
+**What to do:**
+- Add `POST /api/auth/refresh/session` (same origin). It reads the httpOnly cookie, refreshes on the server (with the [D3](#d3) split), sets the cookies, and returns `{ accessToken }`.
+- Make `refresh.client.ts` call it with `credentials: "include"`, and keep its existing single-flight guard.
+- Also make `api/server.ts` use the same server helper. It currently sets `accessToken` as httpOnly with a 24 h life, which does not match the rest.
 
 ---
 
-<a id="issue-9"></a>
-### #9 🟠 Changing the password signs the user out, but the dashboard does not say so
+<a id="d7"></a>
+### D7 🟠 Refresh single-flight: no parallel refreshes (A3)
 
-**Where:** backend `api/dashboard/profile/profile_view.py → ResetPasswordAPI`. Dashboard `src/app/(dashboard)/dashboard/settings/account/change-password-form.tsx`
+**Status:** ❌ Not done.
 
-**What goes wrong:**
-- The backend now asks authserver to change the password, and authserver **revokes every session, including the current one**. The dashboard form just resets itself. The user carries on until the next refresh (up to 15 min) and is then suddenly logged out with no reason given.
-- If revocation only partly succeeds, the backend returns a **failure** response ("Password changed, but existing sessions could not be signed out…") even though the password **did** change. The dashboard shows it as an error, so the user may think the change failed and try again with the old password.
+**Why:** authserver revokes the **whole session** if the same refresh token is used twice. Its settings comment says: *"Clients must refresh single-flight instead (the dashboard BFF's one same-origin refresh route)."* Next.js `<Link>` **prefetches** of protected pages right after expiry each go through `proxy.ts` → `/api/auth/refresh` at the same moment, and so do two tabs.
 
-**Fix:**
-- Dashboard: on success, show "Password changed. Please sign in again." and log out (use the fixed logout from [#1](#issue-1)).
-- Backend (small): return **success with a warning** for the partial case (as `ResetPasswordConfirmAPI` already does), or add a clear code the dashboard can check.
-
----
-
-<a id="issue-10"></a>
-### #10 🟡 The issuer string must be exactly the same in all three repos
-
-- authserver writes `OIDC_ISSUER` into `iss` on every token.
-- The backend checks `iss == OIDC_ISSUER` **exactly**. A trailing `/` in one and not the other means **every new-format token is rejected**.
-- The dashboard builds URLs with `new URL("/oauth/token/", issuer)`, which **drops any path** in the issuer. So the issuer must be a **bare origin**, like `https://auth.mulearn.org`.
-
-**Fix:** use the same value everywhere, with no trailing slash and no path. See [Section 10](#10-environment-variables-must-match-across-repos). Optional: have the backend check it at startup against `/.well-known/openid-configuration`.
+**What to do:**
+- In `proxy.ts`, do not redirect prefetch requests to `/api/auth/refresh`. Check for the `Next-Router-Prefetch: 1` or `Purpose: prefetch` headers and just let them through.
+- Refresh a little **before** expiry (for example 60 s early) from one place. After [D6](#d6), that is the client single-flight.
+- Test with two tabs (see [§13](#13-test-checklist)).
 
 ---
 
-<a id="issue-11"></a>
-### #11 🟡 The dashboard client must be registered exactly right
+<a id="d8"></a>
+### D8 🟠 Show an error on failed sign-in instead of looping (A1)
 
-The dashboard sends only `client_id` (no secret) and asks for `mulearn.read mulearn.write`. So its client must be:
+**Status:** ❌ Not done.
+
+**What goes wrong now:** the callback sends failures to `/login?error=…`. With the flag on, `login/page.tsx` redirects straight back to the provider and **ignores `error`**. A lasting error (such as a client registered with wrong flags) loops until the browser shows "Too many redirects".
+
+**What to do:** in `login/page.tsx`, if `params.error` (or `logged_out`, from [D2](#d2)) is present, render a short message and a **Sign in** button linking to `/api/auth/oidc/start`. Do not redirect in that case.
+
+| `error` value | Message |
+|---|---|
+| `signin_expired`, `signin_mismatch` | "Your sign-in took too long or was started in another tab. Please try again." |
+| `signin_unavailable` | "Sign-in is temporarily unavailable. Please try again in a moment." |
+| `signin_failed` | "We could not sign you in. Please try again." |
+
+---
+
+<a id="d9"></a>
+### D9 🟠 `/register` → provider signup when the flag is on (A8, B10)
+
+**Status:** ❌ Not done.
+
+**What goes wrong now:** only `/login` switches. `/register` still uses the legacy signup and gets **legacy tokens**. Until [D3](#d3) is done, those users are logged out within 15 min. It also keeps the backend's legacy-signup counter above zero, so the legacy path can never be removed.
+
+**What to do:**
+- When `OIDC_ENABLED=true`, make `(auth)/register/page.tsx` redirect to `/api/auth/oidc/start?signup=1`.
+- In `start/route.ts`, when `signup=1`, build the usual `/oauth/authorize/?…` path (with PKCE and state), but redirect to `{issuer}/accounts/signup/?next=<url-encoded authorize path>`.
+- authserver's signup page follows a safe `next` after the account is created. It has **no `prompt=create`**, so `next` is the way to do it.
+- New users then land in the dashboard with `onboarding.state = "INCOMPLETE"` and are sent to `/onboarding/interests`. That part is already ✅.
+
+---
+
+<a id="d10"></a>
+### D10 🟠 Change password → "please sign in again" (B5)
+
+**Status:** ❌ Not done.
+
+**What changed in the backend:**
+- `ResetPasswordAPI` now asks authserver to change the password, and authserver **revokes every session, including this one**. The dashboard form only resets itself, and the user is kicked out up to 15 min later with no reason given.
+- If revocation partly fails, the backend returns a **failure** with *"Password changed, but existing sessions could not be signed out…"*. The dashboard shows it as an error, although the password **did** change.
+
+**What to do in `change-password-form.tsx`:**
+- On success: show "Password changed. Please sign in again with your new password." and run the logout (with [D2](#d2)).
+- If the error message starts with "Password changed", show it as a **warning**, not an error, then log out the same way.
+- (Better: the backend returns success-with-warning for that case. See [§6](#6-also-needed-outside-the-dashboard).)
+
+---
+
+<a id="d11"></a>
+### D11 🟡 Admin console screens (B9)
+
+**Status:** ❌ Not done. The backend and authserver sides are ready.
+
+| Screen | Backend endpoint (Admin role) |
+|---|---|
+| Overview / security posture | `GET /api/v1/dashboard/auth-admin/security-posture/` |
+| Connected apps: list, create | `GET` / `POST /api/v1/dashboard/auth-admin/clients/` |
+| Connected app: view, edit | `GET` / `PATCH /api/v1/dashboard/auth-admin/clients/<client_id>/` |
+| Connected app: disable / enable | `POST …/clients/<client_id>/disable/`, `POST …/clients/<client_id>/enable/` |
+| Sign-in policy (attempt limit, block minutes) | `GET` / `PUT /api/v1/dashboard/auth-admin/signin-policy/` |
+| Login attempts log | `GET /api/v1/dashboard/auth-admin/login-attempts/` |
+| Revoke a member's sessions | `POST /api/v1/dashboard/auth-admin/sessions/revoke/` (button on user management) |
+
+Suggested route: `/dashboard/admin/auth/*`. Add it to `route-access.ts` with the Admin role.
+
+---
+
+<a id="d12"></a>
+### D12 🟡 Validate the new env vars (A14)
+
+**Status:** 🟡 They are in `.env.example`. They are not validated, and `OIDC_REDIRECT_URI` does not exist yet.
+
+**What to do:** add `NEXT_PUBLIC_OIDC_ISSUER`, `NEXT_PUBLIC_OIDC_CLIENT_ID`, `OIDC_ENABLED` and `OIDC_REDIRECT_URI` to `config/env.ts` (the t3 `createEnv` schema). They can be optional, but make them required together when `OIDC_ENABLED=true`, so a bad deploy fails at build time and not at sign-in.
+
+---
+
+<a id="d13"></a>
+### D13 🟡 Friendly message for 429 throttles (B8)
+
+**Status:** ❌ Not done.
+
+**What changes:** the backend now throttles email check (20/min), password reset (5/hour) and registration (10/hour) per IP. DRF answers `429 {"detail": "Request was throttled. Expected available in 3456 seconds."}`, and the dashboard shows that text as it is.
+
+**What to do:** in the shared error helper, map **429** to "Too many attempts. Please wait a bit and try again."
+
+Note for the backend team: at campus events, many students share one college IP. **10 registrations/hour per IP** may block a workshop signup. See [§6](#6-also-needed-outside-the-dashboard).
+
+---
+
+## 6. Also Needed Outside the Dashboard
+
+These are not dashboard code, but the dashboard items above depend on them.
+
+| Where | What | Why |
+|---|---|---|
+| **backend** | Keep the old auth error body (`statusCode: 1000`) in `JWTUtils._validated` | [D1](#d1): refresh detection in the dashboard (and probably the mobile apps) |
+| **backend** | Password change: return **success with a warning** when the password changed but some sessions were not revoked | [D10](#d10) |
+| **backend** | Review the `registration: 10/hour` per-IP throttle for campus NAT | [D13](#d13) |
+| **authserver** | `/oauth/token/` limit: rate-limit only the `authorization_code` grant per IP, **or** key it by `client_id + IP` with a higher limit for the dashboard, **or** allowlist the dashboard's server IPs | [D5](#d5): every dashboard refresh comes from one server IP |
+| **authserver** | Add a "Forgot password?" link on `/accounts/login/` (for example to the dashboard's `/forgot-password`). `password/forgot` emails link to `{AUTH_PUBLIC_URL}/reset-password`, which only exists in the separate auth UI | Users on the new sign-in page cannot reset their password yet |
+| **config** | Register the dashboard client per environment (below) | [D2](#d2), [D4](#d4), A7 |
+| **config** | Issuer string **identical** in all three repos (bare origin, no trailing `/`) | The backend checks `iss` exactly. A mismatch rejects every new token |
+| **config** | `CORS_ALLOWED_ORIGINS` in backend **and** authserver lists every dashboard origin (including Netlify previews if used) | Both defaults include `mulearn-dashboard.vercel.app` but not Netlify |
+| **DB** | db-scripts `alter-1.89.sql` + enum alter for the 6 new `SystemActionLog` types | authserver tables. Admin console audit rows |
+| **known** | After "sign out everywhere", already-issued access tokens still work at the backend for **up to 15 min** (both formats) | The backend verifies locally. Accepted trade-off; tell admins |
+
+**Registering the dashboard client:**
 ```bash
 python manage.py register_oauth_client \
   --name "muLearn Dashboard (prod)" \
@@ -471,146 +415,209 @@ python manage.py register_oauth_client \
   --redirect-uri https://app.mulearn.org/api/auth/oidc/callback \
   --post-logout-redirect-uri "https://app.mulearn.org/login?logged_out=1"
 ```
-- Without `--public`, the token exchange fails, because a confidential client needs a secret.
-- Without `--skip-authorization`, the validator **refuses the `mulearn.*` scopes**, and every sign-in fails (and loops, see [#7](#issue-7)).
-- Create a **separate client per environment**. The dashboard's `.env.example` says the same.
+- Without `--public`, the code exchange fails, because the dashboard sends no secret.
+- Without `--skip-authorization`, the `mulearn.*` scopes are refused, sign-in fails and loops ([D8](#d8)).
+- Use one client **per environment**.
 
 ---
 
-<a id="issue-12"></a>
-### #12 ℹ️ Tokens keep working at the backend for up to 15 minutes after "sign out everywhere"
+## 7. Change Log: Auth Server
 
-After a password change or admin "revoke sessions", authserver revokes refresh tokens and deletes access-token **rows**. But the backend verifies access tokens **locally** (JWKS), and it does not check `global_logout` for either format. So an access token that was already issued still works at the backend until it expires (**15 min at most**). Legacy and new tokens behave the same way here, so it is consistent. Treat it as a known trade-off and document it for admins ("revocation takes effect within 15 minutes").
+Branch `feat/new-auth`, 7 commits (Pranav P, awindsr).
 
----
+### 7.1 New: OIDC provider ("Sign in with muLearn")
+- Uses **django-oauth-toolkit**, mounted at `/oauth/`: `authorize/`, `token/`, `revoke_token/`, `introspect/`, `userinfo/`, `logout/`, `.well-known/openid-configuration`, `.well-known/jwks.json`. Also `/.well-known/openid-configuration` at the root.
+  - **Not mounted on purpose:** self-service client registration, dynamic registration, device flow, token pages.
+- **Access token:** RS256 JWT (`typ: at+jwt`), **15 min**. Claims: `iss, sub, aud, client_id, scope, iat, exp, jti`. **No roles, no muid.**
+- **Refresh token:** opaque, **7 days**, **rotated** on each use. Reuse **revokes the whole family**. Grace period is 0.
+- **ID token:** 15 min, with `name`, `email` and `muid` (display only).
+- **PKCE S256 required.** Only the `code` response type. Implicit and password grants are off. All RFC 9700 flags are on.
+- **Scopes:** `openid`, `profile`, `email`, `mulearn.read`, `mulearn.write` (the last two for first-party clients only).
+- Suspended users cannot refresh. `prompt=none` is supported.
+- `/oauth/token/` rate limit: 120/min per IP. A parallel-refresh race returns `invalid_grant`, not a 500.
+- Redirect URIs: `https`, `mulearn://`, or `http://localhost` (only when `ALLOW_LOCALHOST_REDIRECTS=True`). Matching is exact.
 
-<a id="issue-13"></a>
-### #13 🟡 CORS allowlists: set them per environment
+### 7.2 New: Pages & JSON API for sign-in
+- Pages: `/accounts/login/`, `/accounts/signup/`, `/accounts/logout/`.
+- JSON API for the upcoming auth UI (`/accounts/api/`): `csrf`, `login`, `otp/request`, `signup`, `signup-context`, `google/start`, `google/callback`, `client`, `me`, `logout`, `consent`, `password/forgot`, `password/verify`, `password/reset`.
+- Signup calls backend `POST /api/v1/protected/identity/provision-member/`.
 
-The backend and authserver both default `CORS_ALLOWED_ORIGINS` to `localhost:3000, dev.mulearn.org, mulearn-dashboard.vercel.app, app.mulearn.org`. The dashboard code now talks about **Netlify**, so Netlify deploy previews (`*--<site>.netlify.app`) are **not** in the list. Browser calls from a preview will fail CORS. Set `CORS_ALLOWED_ORIGINS` explicitly in every environment, in both services.
+### 7.3 New: Internal API for the backend (`/api/v1/internal/`, `protectionKey`)
+`password/change/`, `password/set/`, `sessions/revoke/`, `maintenance/cleartokens/`, `admin/login-attempts/`, `admin/security-posture/`, `admin/signin-policy/`, `admin/clients/`, `admin/clients/<id>/`, `admin/clients/<id>/disable/`, `admin/clients/<id>/enable/`
 
----
+### 7.4 Data & sessions
+- The `user` table is `AUTH_USER_MODEL`. OAuth tables are `managed = False`, owned by db-scripts `alter-1.89.sql`.
+- Sessions are stored in Redis. `SessionRevocationMiddleware` ends auth.mulearn.org sessions after "revoke all".
+- `revoke_all_sessions` covers the legacy `global_logout`, browser sessions, and all OIDC tokens.
+- Commands: `register_oauth_client`, `verify_oidc_flow`.
 
-<a id="issue-14"></a>
-### #14 ℹ️ No admin console UI in the dashboard
+### 7.5 Security fixes to legacy `/api/v1/auth/*`
+| Fix | What changed |
+|---|---|
+| F5 | Google and Apple web: single-use `state`, checked on callback. The response includes `state` |
+| F4 | Google mobile: ID token audience checked (`GOOGLE_ALLOWED_CLIENT_IDS`) |
+| F1 | Apple: token signature verified. The client-sent email fallback was removed |
+| F18 | Removed the hidden `flag_register_*` login bypass |
+| F7 | `request-otp` no longer shows whether an account exists |
+| F6 | Legacy refresh fails **closed** (503) if Redis is down |
+| F9 | `token-verification`: constant-time key check, every use logged |
+| F14 | Geolocation has a timeout and uses the real client IP |
+| F17 | CORS allowlist |
+| OTP | An OTP can be used once (race fixed) |
+| Policy | Brute-force limits can be edited by an admin |
 
-The backend has 8 new `/api/v1/dashboard/auth-admin/*` endpoints (connected apps, sign-in policy, login attempts, security posture, revoke sessions), and authserver has the internal API behind them. The dashboard branch has **no screens** for these. See [Section 9](#9-missing-pieces-in-the-dashboard).
-
----
-
-<a id="issue-15"></a>
-### #15 🟡 Forgot-password on the new sign-in page
-
-- The server-rendered `/accounts/login/` page in authserver has **no "Forgot password?" link**.
-- authserver's `password/forgot` emails a link to `{AUTH_PUBLIC_URL}/reset-password`. That page only exists in the **separate auth UI**, not in authserver. Until the auth UI is deployed, that link is a 404.
-- The dashboard's own `/forgot-password` (backend flow → authserver `password/set/`) still works.
-
-**Fix (short term):** add a "Forgot password?" link on `/accounts/login/` that points to the dashboard's `/forgot-password`, or add a simple reset page in authserver.
-
----
-
-<a id="issue-16"></a>
-### #16 🟡 Dashboard env vars are not validated at build time
-
-`NEXT_PUBLIC_OIDC_ISSUER`, `NEXT_PUBLIC_OIDC_CLIENT_ID` and `OIDC_ENABLED` are read with `process.env` directly. They are not in `config/env.ts` (the t3 `createEnv` schema). If one is missing, you only find out at runtime (`start` returns *500 "Sign-in is not configured"*). Add them to the schema (as optional, but required together when `OIDC_ENABLED=true`), along with the new `OIDC_REDIRECT_URI` from [#3](#issue-3).
-
----
-
-<a id="issue-17"></a>
-### #17 ℹ️ Branch drift
-
-- The dashboard branch is **133 commits behind** `dev`. Only `src/api/endpoints.ts` overlaps, so expect one small conflict.
-- The dashboard commit is from **2026-08-25**. The later backend and authserver changes (password ownership, session revocation, admin console, token refactor) came after it. That is where issues #9 and #14 come from.
-
----
-
-## 9. Missing Pieces in the Dashboard
-
-| Missing | Backend / authserver ready? | Suggested page |
-|---|---|---|
-| Admin: connected apps (list / create / edit / disable / enable) | ✅ `auth-admin/clients/*` | `/dashboard/admin/auth/clients` |
-| Admin: sign-in policy (attempt limit, block minutes) | ✅ `auth-admin/signin-policy/` | `/dashboard/admin/auth/policy` |
-| Admin: login attempts log | ✅ `auth-admin/login-attempts/` | `/dashboard/admin/auth/attempts` |
-| Admin: security posture | ✅ `auth-admin/security-posture/` | `/dashboard/admin/auth` |
-| Admin: revoke a member's sessions | ✅ `auth-admin/sessions/revoke/` | button on the user management page |
-| Store `id_token` + RP logout | ✅ `/oauth/logout/` | see [#1](#issue-1) |
-| OIDC-aware browser refresh endpoint | ✅ | see [#5](#issue-5) |
-| Register → provider signup when flag on | ✅ `/accounts/signup/` | see [#8](#issue-8) |
-| "Sign in again" after password change | ✅ | see [#9](#issue-9) |
-| Error screen for failed OIDC sign-in | – | see [#7](#issue-7) |
+### 7.6 Other
+- Per-IP limits on the new pages: login 30/min, OTP 10/10 min, password forgot 10/h, signup 20/h, token 120/min, Google 30/min.
+- `security.log` (for example `token.reuse_detected`). Large test suite plus CI.
 
 ---
 
-## 10. Environment Variables: Must Match Across Repos
+## 8. Change Log: Backend
+
+Branch `feat/new-auth`, compared with upstream `dev`.
+
+### 8.1 Token verification: both formats
+- **RS256 (new):** verified with authserver's JWKS (`{OIDC_ISSUER}/oauth/.well-known/jwks.json`). Checks `iss`, `aud`, `exp` and the signature. The JWKS cache lasts 1 h and keeps the last good keys if authserver is down.
+- **HS256 (legacy):** checked with `SECRET_KEY` and the `expiry` field.
+- The format is picked from the token header. HS256 is never checked with a public key.
+- **Scopes (new tokens only):** GET needs `mulearn.read` or `mulearn.write`. Everything else needs `mulearn.write`.
+- Roles and muid for new tokens come from the DB.
+- **F10:** the token is verified once per request, and every accessor uses that result.
+- ⚠️ **The error body changed** (see [D1](#d1)).
+- Per-format counter in `logs/auth_migration.log`.
+
+### 8.2 Password owned by authserver
+- Change password (`ResetPasswordAPI`) → authserver `password/change/`.
+- Reset link (`ResetPasswordConfirmAPI`) → authserver `password/set/`.
+- Both sign the user out everywhere (F3). A Celery retry task plus a sweep (at :07/:22/:37/:52) finish partial failures.
+
+### 8.3 New endpoints
+| Endpoint | Caller |
+|---|---|
+| `POST /api/v1/protected/identity/provision-member/` | authserver signup (`protectionKey`) |
+| `/api/v1/dashboard/auth-admin/*`: `login-attempts/`, `security-posture/`, `signin-policy/`, `clients/`, `clients/<id>/`, `clients/<id>/disable/`, `clients/<id>/enable/`, `sessions/revoke/` | dashboard, Admin only. Audit rows in `SystemActionLog` (6 new enum values) |
+
+### 8.4 Visible to the dashboard
+- `user/info/` adds `onboarding: {state, missing, exempt}`. `Company` → exempt.
+- Forgot password always returns the same success text.
+- Throttles: email check 20/min, password reset 5/hour, registration 10/hour (per IP).
+- CORS allowlist.
+
+### 8.5 Other
+- Celery beat: clear expired tokens hourly at :50.
+- `db/user.py`: `deleted_at` and `deleted_by` declared. `last_login` not declared on purpose.
+- Side change: achievement views no longer send raw exception text.
+
+---
+
+## 9. Change Log: Dashboard (What the Frontend Dev Already Did)
+
+One commit `c3a01d1` (awindsr, 2026-08-25).
+
+| File | What it does |
+|---|---|
+| `(auth)/login/page.tsx` | Flag on → redirect to `/api/auth/oidc/start?ruri=…`. Flag off → the old form |
+| `api/auth/oidc/start/route.ts` | PKCE verifier, challenge and state in httpOnly cookies (10 min). Redirects to `/oauth/authorize/` with scope `openid profile email mulearn.read mulearn.write` |
+| `api/auth/oidc/callback/route.ts` | Clears the flow cookies, checks state, exchanges the code. Sets `refreshToken` (httpOnly, 7 d), `accessToken` (JS, `expires_in`) and `isAuthenticated` |
+| `api/auth/refresh/route.ts` | Flag on → OIDC refresh, saves the rotated token. Flag off → legacy |
+| `api/auth/logout/route.ts` | Flag on → `/oauth/revoke_token/`. Flag off → legacy logout |
+| `lib/auth/pkce.ts`, `lib/auth/oidc-refresh.ts` | PKCE helpers. Refresh with a 10 s timeout |
+| `src/proxy.ts` | Reads `exp` and `expiry`. No `roles` claim → defers to the server |
+| `onboarding-guard.tsx`, `auth.schema.ts` | Server onboarding field with fallback. Google URL response requires `state` |
+| `lib/auth/oauth-state.ts`, `use-google-login.ts`, `callback-page-client.tsx`, `endpoints.ts` | Google `state` remember, check and forward |
+| `.env.example`, `package.json`, `ci.yml`, tests | Env docs, vitest, CI test job |
+
+---
+
+## 10. Contract Check: What Matches
+
+✅ consistent · ⚠️ only with the right config · ❌ mismatch (see the item)
+
+| Item | authserver | backend | dashboard | Status |
+|---|---|---|---|---|
+| OAuth URLs | `/oauth/authorize/`, `/oauth/token/`, `/oauth/revoke_token/` | – | same | ✅ |
+| JWKS URL | `/oauth/.well-known/jwks.json` | same | – | ✅ |
+| Signing + `kid` | RS256, `kid` = thumbprint | looks up key by `kid` | – | ✅ |
+| `iss` | `OIDC_ISSUER` | exact match | `NEXT_PUBLIC_OIDC_ISSUER` | ⚠️ must be identical |
+| `aud` | `mulearn-api` | `mulearn-api` | – | ✅ |
+| User id | `sub` = `user.id` | uses `sub` | – | ✅ |
+| Expiry | `exp` | enforced | proxy reads `exp` | ✅ |
+| Roles | not in token | from DB | from `/user/info/` | ✅ |
+| Scopes | `mulearn.*` first-party only | read / write check | asks for both | ⚠️ register `--skip-authorization` |
+| PKCE | S256 required | – | S256 | ✅ |
+| Client type | public / confidential | – | public | ⚠️ register `--public` |
+| Token lifetimes | 15 min / 7 days | – | same cookie lifetimes | ✅ |
+| Refresh rotation | on, grace 0 | – | saves new token | ✅ (single-flight ❌ [D7](#d7)) |
+| Google `state` | issued + consumed | – | stored, checked, forwarded | ✅ |
+| Onboarding | – | `{state, missing, exempt}` | same schema | ✅ |
+| Auth error body | – | `403 {"detail"}` | expects `statusCode: 1000` or 401 | ❌ [D1](#d1) |
+| Old ↔ new token switch | – | accepts both | picks by flag | ❌ [D3](#d3) |
+| Provider logout | enabled | – | not used | ❌ [D2](#d2) |
+| Password change sign-out | yes | yes | not handled | ❌ [D10](#d10) |
+| Admin console | ready | ready | no UI | ❌ [D11](#d11) |
+| Internal API paths (backend ↔ authserver) | 11 routes + provision | all match | – | ✅ |
+
+---
+
+## 11. Environment Variables: Must Match Across Repos
 
 | Meaning | authserver | backend | dashboard | Rule |
 |---|---|---|---|---|
 | Issuer | `OIDC_ISSUER` | `OIDC_ISSUER` | `NEXT_PUBLIC_OIDC_ISSUER` | **Identical.** Bare origin, no trailing `/` |
-| Audience | `OIDC_ACCESS_TOKEN_AUDIENCE` (`mulearn-api`) | `OIDC_AUDIENCE` (`mulearn-api`) | – | Identical |
-| Shared internal key | `PROTECTED_API_KEY` | `PROTECTED_API_KEY` | – | Identical |
-| Backend URL (for provisioning) | `MULEARN_BACKEND_URL` | – | – | Points to the backend |
-| authserver internal URL | – | `AUTH_DOMAIN` | – | Direct to authserver; **must not** go through the auth UI proxy |
-| Signing key | `OIDC_RSA_PRIVATE_KEY` (+ `_INACTIVE`) | – (uses JWKS) | – | Never shared |
-| Client id | registered with `register_oauth_client` | – | `NEXT_PUBLIC_OIDC_CLIENT_ID` | One per environment |
-| Redirect URI | registered | – | `OIDC_REDIRECT_URI` *(new, see #3)* | Exact match |
-| Flag | – | – | `OIDC_ENABLED` | Turn on in dev first |
-| CORS | `CORS_ALLOWED_ORIGINS` | `CORS_ALLOWED_ORIGINS` | – | List every dashboard origin |
-| Proxy count | `RATE_LIMIT_TRUSTED_PROXIES` | – | – | 1 = nginx only, 2 = auth UI + nginx |
-| Public auth URL | `AUTH_PUBLIC_URL` | – | – | Used in reset emails and the Google redirect |
-| Google | `SOCIAL_AUTH_GOOGLE_OAUTH2_*`, `GOOGLE_ALLOWED_CLIENT_IDS` | – | – | Also register `{AUTH_PUBLIC_URL}/accounts/api/google/callback/` in Google Cloud |
+| Audience | `OIDC_ACCESS_TOKEN_AUDIENCE` | `OIDC_AUDIENCE` | – | Both `mulearn-api` |
+| Internal key | `PROTECTED_API_KEY` | `PROTECTED_API_KEY` | – | Identical |
+| Backend URL | `MULEARN_BACKEND_URL` | – | – | Points to the backend |
+| authserver internal URL | – | `AUTH_DOMAIN` | – | Direct to authserver, not via the auth UI proxy |
+| Signing key | `OIDC_RSA_PRIVATE_KEY` (+ `_INACTIVE`) | – | – | Never shared |
+| Client id | registered | – | `NEXT_PUBLIC_OIDC_CLIENT_ID` | One per environment |
+| Redirect URI | registered | – | `OIDC_REDIRECT_URI` *(new, [D4](#d4))* | Exact match |
+| Flag | – | – | `OIDC_ENABLED` | Dev first |
+| CORS | `CORS_ALLOWED_ORIGINS` | `CORS_ALLOWED_ORIGINS` | – | Every dashboard origin |
+| Proxies | `RATE_LIMIT_TRUSTED_PROXIES` | – | – | 1 = nginx, 2 = auth UI + nginx |
+| Public auth URL | `AUTH_PUBLIC_URL` | – | – | Reset emails, Google redirect |
 
 ---
 
-## 11. Setup & Deploy Order
+## 12. Setup & Deploy Order
 
-Do these steps in this order. Each step is safe on its own.
-
-1. **DB:** apply db-scripts `alter-1.89.sql` (OAuth tables, `user.last_login`), and the enum alter for the 6 new `SystemActionLog` action types.
-2. **authserver:** deploy with `OIDC_ISSUER`, `OIDC_RSA_PRIVATE_KEY`, `MULEARN_BACKEND_URL`, `PROTECTED_API_KEY` and `CORS_ALLOWED_ORIGINS`. Check:
-   - `GET {issuer}/.well-known/openid-configuration` returns the right `issuer`.
-   - `GET {issuer}/oauth/.well-known/jwks.json` returns a key.
-   - `python manage.py verify_oidc_flow` passes.
-3. **backend:** deploy with `OIDC_ISSUER` (identical to authserver), `OIDC_AUDIENCE` and `CORS_ALLOWED_ORIGINS`. Legacy tokens keep working, and nothing changes for users yet.
-4. **Register the dashboard client** per environment ([#11](#issue-11)).
-5. **Fix dashboard issues #1 – #3 and #5 – #8** (and authserver #4) before going further.
-6. **dashboard:** deploy with `NEXT_PUBLIC_OIDC_ISSUER`, `NEXT_PUBLIC_OIDC_CLIENT_ID`, `OIDC_REDIRECT_URI` and `OIDC_ENABLED=false`.
-7. Turn on `OIDC_ENABLED=true` in **dev** and run the [test checklist](#12-test-checklist-before-turning-it-on).
-8. Turn it on in **prod**. Watch `logs/auth_migration.log` (backend) and `security.log` (authserver, especially `token.reuse_detected` and 429s on `/oauth/token/`).
-9. After **7 days of zero** `format=legacy_hs256` and zero `legacy_signup`, remove the legacy code paths.
+1. **Backend fix for [D1](#d1) first.** Do not deploy the backend branch to production before it, or the dashboard stops refreshing tokens.
+2. **DB:** `alter-1.89.sql` + the `SystemActionLog` enum alter.
+3. **authserver:** deploy. Check `/.well-known/openid-configuration`, `/oauth/.well-known/jwks.json` and `manage.py verify_oidc_flow`.
+4. **backend:** deploy with the same `OIDC_ISSUER`. Legacy users are not affected.
+5. **Register the dashboard client** per environment ([§6](#6-also-needed-outside-the-dashboard)).
+6. **Dashboard:** finish D2 – D10 (at least the 🔴 ones). Deploy with `OIDC_ENABLED=false`.
+7. Turn `OIDC_ENABLED=true` in **dev** and run [§13](#13-test-checklist).
+8. Turn it on in **prod**. Watch backend `logs/auth_migration.log` and authserver `security.log` (`token.reuse_detected`, 429 on `/oauth/token/`).
+9. After **7 days of zero** legacy tokens and legacy signups, remove the legacy paths.
 
 ---
 
-## 12. Test Checklist Before Turning It On
+## 13. Test Checklist
 
-**Sign in / out**
-- [ ] Sign in with the flag on, on the **real deployed domain** (not localhost). `redirect_uri` shows `app.mulearn.org` ([#3](#issue-3)).
-- [ ] New user signs up on auth.mulearn.org → lands on `/onboarding/interests` (onboarding `INCOMPLETE`).
-- [ ] Company user → **not** sent to interests (`exempt: true`).
-- [ ] Log out, then click Sign in → **the password is asked for** ([#1](#issue-1)).
-- [ ] Sign in with a broken config (wrong client id) → an error screen appears, not a redirect loop ([#7](#issue-7)).
+**Flag OFF, new backend deployed**
+- [ ] Leave a tab idle for 16 min, then click something that calls the API → it refreshes silently, with no "Token expired" toast ([D1](#d1)).
 
-**Migration**
-- [ ] Sign in with the flag **off**, turn the flag **on**, wait 16 min, click around → **still signed in** ([#2](#issue-2)).
-- [ ] The reverse: sign in with the flag on, turn it off → still signed in.
-- [ ] `/register` with the flag on → goes to the provider signup ([#8](#issue-8)).
+**Sign in / out (flag ON)**
+- [ ] Sign in on the **real domain**. `redirect_uri` is `app.mulearn.org` ([D4](#d4)).
+- [ ] Log out, then Sign in → **the password is asked for** ([D2](#d2)).
+- [ ] Wrong client config → an error screen appears, not a redirect loop ([D8](#d8)).
+- [ ] `/register` → provider signup → back in the dashboard → sent to interests ([D9](#d9)).
+- [ ] Company user → not sent to interests.
+
+**Switching**
+- [ ] Sign in with the flag OFF, turn it ON, wait 16 min → still signed in ([D3](#d3)).
+- [ ] The reverse (ON → OFF) → still signed in.
 
 **Token life**
-- [ ] Leave a tab idle for 16 min, then submit a form → the form is **not** lost and you are not bounced ([#5](#issue-5)).
-- [ ] Two tabs, token expired, click in both at once → still signed in, and **no** `token.reuse_detected` in `security.log` ([#6](#issue-6)).
-- [ ] Role-gated page (e.g. Campus Lead) with an OIDC token → opens (the proxy defers, and the server checks roles).
-- [ ] Remove a role in the DB → the next API call is refused right away (roles are not in the token).
-- [ ] Load test: a few thousand refreshes per minute from one IP → no 429 ([#4](#issue-4)).
+- [ ] Idle for 16 min, then submit a form → the form is not lost ([D6](#d6)).
+- [ ] Two tabs, token expired, click both at once → still signed in, and no `token.reuse_detected` ([D7](#d7)).
+- [ ] authserver returns 429 / is down during a refresh → the user is **not** logged out ([D5](#d5)).
+- [ ] Remove a role in the DB → the next API call is refused right away.
 
 **Password**
-- [ ] Change the password in settings → a clear message, then sign in again ([#9](#issue-9)).
-- [ ] Forgot password from the dashboard → email → reset works → old sessions are ended.
-- [ ] Forgot password from the auth.mulearn.org sign-in page → a link exists and works ([#15](#issue-15)).
+- [ ] Change the password → "please sign in again" message, then signed out ([D10](#d10)).
+- [ ] Forgot password → email → reset works.
 
-**Legacy Google (flag off)**
+**Legacy Google (flag OFF)**
 - [ ] Google sign-in works, and the callback carries `state`.
-- [ ] Open the callback URL in another browser → refused ("No sign-in was started in this browser").
-
-**Backend**
-- [ ] A new-format token with only `openid profile email` (partner app) → `GET` and `POST` to the backend are refused.
-- [ ] Stop authserver for a few minutes → existing new-format tokens still verify at the backend (cached JWKS).
-- [ ] Issuer with and without a trailing `/` → confirm all three configs use the same string ([#10](#issue-10)).
+- [ ] Open the callback URL in another browser → refused.
